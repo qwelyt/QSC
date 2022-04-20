@@ -1,5 +1,16 @@
 import cadquery as cq
+from enum import Enum, auto
 from typing import Tuple
+
+
+class HomingType(Enum):
+    BAR = auto()
+    SCOOPED = auto()
+    DOT = auto()
+
+
+class StemType(Enum):
+    CHERRY = auto()
 
 
 class QSC:
@@ -11,7 +22,7 @@ class QSC:
     _bottomWidth = 1  # u
     _topDiff = -7  # mm
     _dishThickness = 1.2  # mm
-    _stemType = "cherry"
+    _stemType = StemType.CHERRY
     _stemOffset = (0, 0, 0)
     _stemCherryDiameter = 5.6  # mm
     _stemSupport = True
@@ -19,6 +30,7 @@ class QSC:
     _stemVSlop = 0.0  # mm
     _stemHSlop = 0.0  # mm
     _inverted = False
+    _homingType = None  # None, Bar, Scooped, Dot
     _row = 3
 
     def __init__(self):
@@ -49,7 +61,7 @@ class QSC:
 
     def _stem(self):
         stemHeight = self._height - self._topThickness
-        if self._stemType == "cherry":
+        if self._stemType == StemType.CHERRY:
             cherryCross = (1.5 + self._stemHSlop, 4.2 + self._stemVSlop)
             return (cq.Workplane("XY")
                     .sketch()
@@ -65,7 +77,7 @@ class QSC:
             return (cq.Workplane().box(2, 2, stemHeight))
 
     def _buildStemSupport(self):
-        if self._stemType == "cherry":
+        if self._stemType == StemType.CHERRY:
             w = (self._toMM(self._length) - self._wallThickness) / 2 - self._stemCherryDiameter / 2
             h = self._height - self._topThickness - 0.2
             d = self._topDiff + (self._height - h) + 1
@@ -79,6 +91,8 @@ class QSC:
                     .loft()
                     .translate((0, supportOffset, 0))
                     )
+        else:
+            return (cq.Workplane("XY").box(2, 2, 2))
 
     def _stemAndSupport(self):
         w = cq.Workplane("XY")
@@ -102,7 +116,7 @@ class QSC:
     def _base(self):
         w = self._toMM(self._width)
         l = self._toMM(self._length)
-        return self._box(w, l, self._height, self._topDiff, 0, 0, "fillet")
+        return self._box(w, l, self._height, self._topDiff, 0, 0, "none")
 
     def _hollow(self):
         ih = self._height - self._topThickness
@@ -110,7 +124,9 @@ class QSC:
         il = self._toMM(self._length) - self._wallThickness
         return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
 
-    def _dish(self):
+    def _createDish(self):
+        if self._homingType == HomingType.SCOOPED:
+            self._dishThickness = self._dishThickness*1.1 if self._inverted else self._dishThickness*1.5
         w = self._toMM(self._width) - self._topDiff * -1 / 1.2
         l = self._toMM(self._length) - self._topDiff * -1 / 1.2
         dd = pow((pow(w, 2) + pow(l, 2)), 0.5)
@@ -127,6 +143,42 @@ class QSC:
                 .makeSphere(self._dishThickness, angleDegrees1=-90)
                 .transformGeometry(scale_matrix)
                 )
+
+    def _dish(self, cap):
+        dish = self._createDish()
+        capBB = cap.findSolid().BoundingBox()
+        h = capBB.zmax
+        if self._inverted:
+            i = cap.intersect(dish.translate((0, 0, h - self._dishThickness)))
+            cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness, "cut")
+            cap = cap.union(i)
+        else:
+            cap = cap.cut(dish.translate((0, 0, h)))
+
+        return cap
+
+    def _homing(self, cap):
+        capBB = cap.findSolid().BoundingBox()
+        if self._homingType == HomingType.SCOOPED:
+            return cap # Handled in dish creation
+        elif self._homingType == HomingType.BAR:
+            barSize = 1
+            return cap.add(cq.Workplane()
+                           .sketch()
+                           .rect(capBB.xlen / 3, barSize)
+                           .finalize()
+                           .extrude(1)
+                           .fillet(barSize / 2.5)
+                           .translate((0, capBB.ylen/2+self._topDiff/1.5, capBB.zlen-self._dishThickness))
+                           )
+        elif self._homingType == HomingType.DOT:
+            dotSize = 2
+            return cap.add(cq.Workplane()
+                           .sphere(dotSize)
+                           .translate((0, 0, capBB.zlen - dotSize))
+                           )
+        else:
+            return cap
 
     def wallThickness(self, thickness: float):
         self._wallThickness = thickness
@@ -156,7 +208,7 @@ class QSC:
         self._topDiff = diff
         return self
 
-    def stemType(self, type: str):
+    def stemType(self, type: StemType):
         self._stemType = type
         return self
 
@@ -182,6 +234,10 @@ class QSC:
 
     def specialStabPlacement(self, placement: Tuple[Tuple[float, float, float], Tuple[float, float, float]]):
         self._specialStabPlacement = placement
+        return self
+
+    def homing(self, type: HomingType = HomingType.SCOOPED):
+        self._homingType = type
         return self
 
     def inverted(self, inverted: bool = True):
@@ -211,24 +267,11 @@ class QSC:
                 )
 
     def build(self):
-        w = self._toMM(self._width)
-        l = self._toMM(self._length)
-        dish = self._dish()
         cap = self._base()
-        capBB = cap.findSolid().BoundingBox()
-        h = capBB.zmax
-
-        if self._inverted:
-            i = cap.intersect(dish.translate((0, 0, h - self._dishThickness)))
-            cap = cap.faces(">Z").sketch().rect(w, l).finalize().extrude(-self._dishThickness, "cut")
-            cap = cap.union(i)
-        else:
-            cap = cap.cut(dish.translate((0, 0, h)))
-
+        cap = self._dish(cap)
         cap = cap.fillet(0.685)
-
+        cap = self._homing(cap)
         cap = cap.cut(self._hollow())
-
         cap = cap.union(self._stemAndSupport())
 
         return cap.translate((0, 0, -self._height / 2))
@@ -240,17 +283,17 @@ class QSC:
 
 
 c = QSC().row(3).width(1).length(1)
-#ci = c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))
+#ci = (c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))homing(HomingType.SCOOPED)
 cb = c.build()
 
 r3 = (cq.Assembly(name=c.name())
       .add(cb, name="cap")
       )
-#r3i = ci.build()
+# r3i = ci.build()
 # show_object(r3, options={"alpha": 0, "color": (255, 10, 50)})
-#show_object(r3i.translate((19.05, 19.05, 0)), options={"alpha": 0, "color": (255, 10, 50)})
+# show_object(r3i.translate((19.05, 19.05, 0)), options={"alpha": 0, "color": (255, 10, 50)})
 # cq.exporters.export(r3, c.name()+".step", cq.exporters.ExportTypes.STEP)
 
 show_object(r3)
-r3.save(r3.name+".step", "STEP")
+r3.save(r3.name + ".step", "STEP")
 # cq.exporters.export(cb.rotate((0,0,0),(1,0,0),-90), r3.name+".stl")
