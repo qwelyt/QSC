@@ -3,6 +3,11 @@ from enum import Enum, auto
 from typing import Tuple
 
 
+# TODO
+# * Rows
+# * ISO
+# * Alps?
+
 class HomingType(Enum):
     BAR = auto()
     SCOOPED = auto()
@@ -11,6 +16,10 @@ class HomingType(Enum):
 
 class StemType(Enum):
     CHERRY = auto()
+
+class Constants():
+    STEP_PERCENTAGE = 0.7142857142857143
+    U_IN_MM = 19.05
 
 
 class QSC:
@@ -31,6 +40,7 @@ class QSC:
     _stemHSlop = 0.0  # mm
     _inverted = False
     _homingType = None  # None, Bar, Scooped, Dot
+    _stepped = False
     _row = 3
 
     def __init__(self):
@@ -57,7 +67,7 @@ class QSC:
                 )
 
     def _toMM(self, u):
-        return u * 19
+        return u * Constants.U_IN_MM
 
     def _stem(self):
         stemHeight = self._height - self._topThickness
@@ -114,19 +124,35 @@ class QSC:
         return w.combine()
 
     def _base(self):
-        w = self._toMM(self._width)
         l = self._toMM(self._length)
-        return self._box(w, l, self._height, self._topDiff, 0, 0, "none")
+        if self._stepped:
+            bw = self._toMM(self._width)
+            w1 = bw * Constants.STEP_PERCENTAGE
+            high = self._box(w1, l, self._height, self._topDiff, 0, 0, "none")
+            step = self._box(bw, l, self._height/2, self._topDiff+(self._height/2)-0.5, 0, 0, "none")
+            return high.translate((-w1/4.6,0,0)).add(step.translate((0,0,0))).combine()
+        else:
+            w = self._toMM(self._width)
+            return self._box(w, l, self._height, self._topDiff, 0, 0, "none")
 
     def _hollow(self):
-        ih = self._height - self._topThickness
-        iw = self._toMM(self._width) - self._wallThickness
         il = self._toMM(self._length) - self._wallThickness
-        return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
+        iw = self._toMM(self._width) - self._wallThickness
+        if self._stepped:
+            bw = self._toMM(self._width)
+            w1 = bw * Constants.STEP_PERCENTAGE
+            ihHigh = self._height - self._topThickness
+            ihStep = self._height/2 - self._topThickness
+            high = self._box(w1-self._wallThickness, il, ihHigh, self._topDiff, 0, 0, "none")
+            step = self._box(iw, il, ihStep, self._topDiff+(self._height/2)-0.5, 0, 0, "none")
+            return high.translate((-w1/4.6,0,0)).add(step.translate((0,0,0))).combine()
+        else:
+            ih = self._height - self._topThickness
+            return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
 
     def _createDish(self):
         if self._homingType == HomingType.SCOOPED:
-            self._dishThickness = self._dishThickness*1.1 if self._inverted else self._dishThickness*1.5
+            self._dishThickness = self._dishThickness * 1.1 if self._inverted else self._dishThickness * 1.5
         w = self._toMM(self._width) - self._topDiff * -1 / 1.2
         l = self._toMM(self._length) - self._topDiff * -1 / 1.2
         dd = pow((pow(w, 2) + pow(l, 2)), 0.5)
@@ -160,7 +186,7 @@ class QSC:
     def _homing(self, cap):
         capBB = cap.findSolid().BoundingBox()
         if self._homingType == HomingType.SCOOPED:
-            return cap # Handled in dish creation
+            return cap  # Handled in dish creation
         elif self._homingType == HomingType.BAR:
             barSize = 1
             return cap.add(cq.Workplane()
@@ -169,7 +195,7 @@ class QSC:
                            .finalize()
                            .extrude(1)
                            .fillet(barSize / 2.5)
-                           .translate((0, capBB.ylen/2+self._topDiff/1.5, capBB.zlen-self._dishThickness))
+                           .translate((0, capBB.ylen / 2 + self._topDiff / 1.5, capBB.zlen - self._dishThickness))
                            )
         elif self._homingType == HomingType.DOT:
             dotSize = 2
@@ -244,6 +270,12 @@ class QSC:
         self._inverted = inverted
         return self
 
+    def stepped(self, steppedKey=True):
+        self._stepped = steppedKey
+        lowerWidth = self._width * Constants.STEP_PERCENTAGE
+        offset = (Constants.U_IN_MM * (self._width - lowerWidth) / 2)
+        return self.stemOffset([-offset,0,0])
+
     def row(self, row: int):
         self._row = row
         return self
@@ -279,11 +311,12 @@ class QSC:
     def name(self):
         name = "qsc_row" + str(self._row) + "_" + str(self._width) + "x" + str(self._length)
         name = name + "_i" if self._inverted else name
+        name = name + "_stepped" if self._stepped else name
         return name
 
 
-c = QSC().row(3).width(1).length(1)
-#ci = (c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))homing(HomingType.SCOOPED)
+c = QSC().row(3).width(1.75).length(1).stepped()
+# ci = (c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))homing(HomingType.SCOOPED)
 cb = c.build()
 
 r3 = (cq.Assembly(name=c.name())
