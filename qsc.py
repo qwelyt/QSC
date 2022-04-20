@@ -17,6 +17,7 @@ class HomingType(Enum):
 class StemType(Enum):
     CHERRY = auto()
 
+
 class Constants():
     STEP_PERCENTAGE = 0.7142857142857143
     U_IN_MM = 19.05
@@ -33,6 +34,7 @@ class QSC:
     _dishThickness = 1.2  # mm
     _stemType = StemType.CHERRY
     _stemOffset = (0, 0, 0)
+    _stemRotation = 0
     _stemCherryDiameter = 5.6  # mm
     _stemSupport = True
     _specialStabPlacement = None
@@ -41,7 +43,9 @@ class QSC:
     _inverted = False
     _homingType = None  # None, Bar, Scooped, Dot
     _stepped = False
+    _isoEnter = False
     _row = 3
+    _fillet = 0.685
 
     def __init__(self):
         pass
@@ -88,14 +92,16 @@ class QSC:
 
     def _buildStemSupport(self):
         if self._stemType == StemType.CHERRY:
-            w = (self._toMM(self._length) - self._wallThickness) / 2 - self._stemCherryDiameter / 2
+            wORl = self._length if self._stemRotation == 0 or self._stemRotation == 270 else self._width
+            wORl = wORl - (wORl / 3) if self._isoEnter else wORl
+            w = (self._toMM(wORl) - self._wallThickness) / 2 - self._stemCherryDiameter / 2
             h = self._height - self._topThickness - 0.2
             d = self._topDiff + (self._height - h) + 1
 
             a = self._srect(0.5, w, op="none")
             b = self._srect(0.5, w + d, op="none")
 
-            supportOffset = -(-(self._toMM(self._length) - self._wallThickness) / 4 - self._stemCherryDiameter / 2 + 1)
+            supportOffset = -(-(self._toMM(wORl) - self._wallThickness) / 4 - self._stemCherryDiameter / 2 + 1)
             return (cq.Workplane("XY")
                     .placeSketch(a, b.moved(cq.Location(cq.Vector(0, d / 2, h))))
                     .loft()
@@ -105,6 +111,7 @@ class QSC:
             return (cq.Workplane("XY").box(2, 2, 2))
 
     def _stemAndSupport(self):
+        wORl = self._width if self._stemRotation == 0 or self._stemRotation == 180 else self._length
         w = cq.Workplane("XY")
         s = self._stem().union(self._buildStemSupport()) if self._stemSupport else self._stem()
         w.add(s.translate(self._stemOffset))
@@ -114,14 +121,14 @@ class QSC:
             n = s.translate(self._specialStabPlacement[1])
             mn = m.union(n)
             w.add(mn)
-        elif self._width >= 6:
+        elif wORl >= 6:
             w.add(s.translate((-50, 0, 0)))
             w.add(s.translate((50, 0, 0)))
-        elif self._width >= 2:
+        elif wORl >= 2:
             w.add(s.translate((-12, 0, 0)))
             w.add(s.translate((12, 0, 0)))
 
-        return w.combine()
+        return w.combine().rotate((0, 0, 0), (0, 0, 1), self._stemRotation)
 
     def _base(self):
         l = self._toMM(self._length)
@@ -129,8 +136,14 @@ class QSC:
             bw = self._toMM(self._width)
             w1 = bw * Constants.STEP_PERCENTAGE
             high = self._box(w1, l, self._height, self._topDiff, 0, 0, "none")
-            step = self._box(bw, l, self._height/2, self._topDiff+(self._height/2)-0.5, 0, 0, "none")
-            return high.translate((-w1/4.6,0,0)).add(step.translate((0,0,0))).combine()
+            step = self._box(bw, l, self._height / 2, self._topDiff + (self._height / 2) - 0.5, 0, 0, "none")
+            return high.translate((-w1 / 4.6, 0, 0)).add(step.translate((0, 0, 0))).combine()
+        elif self._isoEnter:
+            w = self._toMM(self._width)
+            w6 = w / 6
+            lower = self._box(w - w6, l, self._height, self._topDiff, 0, 0, "none")
+            upper = self._box(w, l / 2, self._height, self._topDiff, 0, 0, "none")
+            return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
         else:
             w = self._toMM(self._width)
             return self._box(w, l, self._height, self._topDiff, 0, 0, "none")
@@ -142,10 +155,19 @@ class QSC:
             bw = self._toMM(self._width)
             w1 = bw * Constants.STEP_PERCENTAGE
             ihHigh = self._height - self._topThickness
-            ihStep = self._height/2 - self._topThickness
-            high = self._box(w1-self._wallThickness, il, ihHigh, self._topDiff, 0, 0, "none")
-            step = self._box(iw, il, ihStep, self._topDiff+(self._height/2)-0.5, 0, 0, "none")
-            return high.translate((-w1/4.6,0,0)).add(step.translate((0,0,0))).combine()
+            ihStep = self._height / 2 - self._topThickness
+            high = self._box(w1 - self._wallThickness, il, ihHigh, self._topDiff, 0, 0, "none")
+            step = self._box(iw, il, ihStep, self._topDiff + (self._height / 2) - 0.5, 0, 0, "none")
+            return high.translate((-w1 / 4.6, 0, 0)).add(step.translate((0, 0, 0))).combine()
+        elif self._isoEnter:
+            ih = self._height - self._topThickness
+            il2 = self._toMM(1) - self._wallThickness
+            w = self._toMM(self._width)
+            w6 = w / 6
+            iw2 = iw - w6
+            lower = self._box(iw2, il, ih, self._topDiff, 0, 0, "none")
+            upper = self._box(iw, il2, ih, self._topDiff, 0, 0, "none")
+            return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
         else:
             ih = self._height - self._topThickness
             return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
@@ -242,6 +264,10 @@ class QSC:
         self._stemOffset = offset
         return self
 
+    def stemRotation(self, rotation: float):
+        self._stemRotation = rotation
+        return self
+
     def stemCherryDiameter(self, d: float):
         self._stemCherryDiameter = d
         return self
@@ -270,14 +296,30 @@ class QSC:
         self._inverted = inverted
         return self
 
-    def stepped(self, steppedKey=True):
+    def stepped(self, steppedKey: bool = True):
         self._stepped = steppedKey
         lowerWidth = self._width * Constants.STEP_PERCENTAGE
         offset = (Constants.U_IN_MM * (self._width - lowerWidth) / 2)
-        return self.stemOffset([-offset,0,0])
+        return self.stemOffset([-offset, 0, 0])
+
+    def isoEnter(self, iso: bool = True):
+        self._isoEnter = iso
+        self.width(1.5)
+        self.length(2)
+        self.stemRotation(270)
+        self.fillet(0.3)
+        return self
+
+    def fillet(self, value: Float):
+        self._filetValue = value
+        return value
 
     def row(self, row: int):
         self._row = row
+        return self
+
+    def filleting(self, value: float):
+        self._fillet = value
         return self
 
     def clone(self):
@@ -298,10 +340,11 @@ class QSC:
                 .row(self._row)
                 )
 
+
     def build(self):
         cap = self._base()
         cap = self._dish(cap)
-        cap = cap.fillet(0.685)
+        cap = cap.fillet(self._fillet)
         cap = self._homing(cap)
         cap = cap.cut(self._hollow())
         cap = cap.union(self._stemAndSupport())
@@ -315,7 +358,7 @@ class QSC:
         return name
 
 
-c = QSC().row(3).width(1.75).length(1).stepped()
+c = QSC().row(3).width(1.75).length(1).isoEnter()
 # ci = (c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))homing(HomingType.SCOOPED)
 cb = c.build()
 
