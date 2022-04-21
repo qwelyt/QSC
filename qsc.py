@@ -90,18 +90,19 @@ class QSC:
         else:
             return (cq.Workplane().box(2, 2, stemHeight))
 
-    def _buildStemSupport(self):
+    def _buildStemSupport(self, cap):
         if self._stemType == StemType.CHERRY:
-            wORl = self._length if self._stemRotation == 0 or self._stemRotation == 270 else self._width
-            wORl = wORl - (wORl / 3) if self._isoEnter else wORl
-            w = (self._toMM(wORl) - self._wallThickness) / 2 - self._stemCherryDiameter / 2
+            capBB = cap.findSolid().BoundingBox()
+            wORl = capBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else capBB.xlen
+            wORl = wORl - self._toMM(0.25) if self._isoEnter else wORl
+            w = (wORl - self._wallThickness) / 2 - self._stemCherryDiameter / 2
             h = self._height - self._topThickness - 0.2
             d = self._topDiff + (self._height - h) + 1
 
             a = self._srect(0.5, w, op="none")
             b = self._srect(0.5, w + d, op="none")
 
-            supportOffset = -(-(self._toMM(wORl) - self._wallThickness) / 4 - self._stemCherryDiameter / 2 + 1)
+            supportOffset = -(-(wORl - self._wallThickness) / 4 - self._stemCherryDiameter / 2 + 1)
             return (cq.Workplane("XY")
                     .placeSketch(a, b.moved(cq.Location(cq.Vector(0, d / 2, h))))
                     .loft()
@@ -110,10 +111,10 @@ class QSC:
         else:
             return (cq.Workplane("XY").box(2, 2, 2))
 
-    def _stemAndSupport(self):
+    def _stemAndSupport(self, cap):
         wORl = self._width if self._stemRotation == 0 or self._stemRotation == 180 else self._length
         w = cq.Workplane("XY")
-        s = self._stem().union(self._buildStemSupport()) if self._stemSupport else self._stem()
+        s = self._stem().union(self._buildStemSupport(cap)) if self._stemSupport else self._stem()
         w.add(s.translate(self._stemOffset))
 
         if self._specialStabPlacement is not None:
@@ -175,7 +176,8 @@ class QSC:
     def _createDish(self):
         if self._homingType == HomingType.SCOOPED:
             self._dishThickness = self._dishThickness * 1.1 if self._inverted else self._dishThickness * 1.5
-        w = self._toMM(self._width) - self._topDiff * -1 / 1.2
+        isoOrNot = self._toMM(2) if self._isoEnter else self._toMM(self._width)
+        w = isoOrNot - self._topDiff * -1 / 1.2
         l = self._toMM(self._length) - self._topDiff * -1 / 1.2
         dd = pow((pow(w, 2) + pow(l, 2)), 0.5)
         s_x, s_y, s_z = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness, 1.0
@@ -310,7 +312,7 @@ class QSC:
         self.fillet(0.3)
         return self
 
-    def fillet(self, value: Float):
+    def fillet(self, value: float):
         self._filetValue = value
         return value
 
@@ -340,25 +342,25 @@ class QSC:
                 .row(self._row)
                 )
 
-
     def build(self):
         cap = self._base()
         cap = self._dish(cap)
         cap = cap.fillet(self._fillet)
         cap = self._homing(cap)
         cap = cap.cut(self._hollow())
-        cap = cap.union(self._stemAndSupport())
+        cap = cap.union(self._stemAndSupport(cap))
 
         return cap.translate((0, 0, -self._height / 2))
 
     def name(self):
-        name = "qsc_row" + str(self._row) + "_" + str(self._width) + "x" + str(self._length)
+        name = "qsc_row" + str(self._row)
+        name = name + "_isoEnter" if self._isoEnter else name + "_" + str(self._width) + "x" + str(self._length)
         name = name + "_i" if self._inverted else name
         name = name + "_stepped" if self._stepped else name
         return name
 
 
-c = QSC().row(3).width(1.75).length(1).isoEnter()
+c = QSC().row(3).width(1.25).length(2).stemRotation(90)
 # ci = (c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))homing(HomingType.SCOOPED)
 cb = c.build()
 
