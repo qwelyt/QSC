@@ -404,12 +404,8 @@ def showcase():
     cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
 
 
-# showcase() # Comment out this line when doing your own thing
+showcase() # Comment out this line when doing your own thing
 # Build your own cap here
-# cap = QSC().build()
-# cq.exporters.export(cap.rotate((0,0,0),(1,0,0),-90), cap.name+".stl")
+# cap = QSC()
+#cq.exporters.export(cap.build().rotate((0, 0, 0), (1, 0, 0), -90), cap.name() + ".stl")
 
-for i in range(1, 5):
-    cap = QSC().row(i)
-    # show_object(cap)
-    cq.exporters.export(cap.build().rotate((0, 0, 0), (1, 0, 0), -90), cap.name() + ".stl")
