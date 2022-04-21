@@ -1,10 +1,10 @@
-import cadquery as cq
 from enum import Enum, auto
 from typing import Tuple
 
+import cadquery as cq
+
 
 # TODO
-# * Rows
 # * Alps?
 
 class HomingType(Enum):
@@ -179,19 +179,28 @@ class QSC:
         w = isoOrNot - self._topDiff * -1 / 1.2
         l = self._toMM(self._length) - self._topDiff * -1 / 1.2
         dd = pow((pow(w, 2) + pow(l, 2)), 0.5)
-        s_x, s_y, s_z = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness, 1.0
+        row_adjustments = {
+            1: (2, 0.5),
+            2: (1, 0.2),
+            3: (0, 0),
+            4: (-1, 0.2),
+            5: (0, 0)
+        }.get(self._row)
+        dishT = self._dishThickness - row_adjustments[1]
+        s_x, s_y, s_z = dd / 2 / dishT, dd / 2 / dishT, 1.0
         scale_matrix = cq.Matrix(
             [
                 [s_x, 0.0, 0.0, 0.0],
                 [0.0, s_y, 0.0, 0.0],
-                [0.0, 0.0, s_z, 0.0],
+                [0.0, row_adjustments[0], s_z, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ]
         )
-        return (cq.Solid
-                .makeSphere(self._dishThickness, angleDegrees1=-90)
-                .transformGeometry(scale_matrix)
-                )
+        scaled_sphere = (cq.Solid
+                         .makeSphere(self._dishThickness, angleDegrees1=-90)
+                         .transformGeometry(scale_matrix)
+                         )
+        return scaled_sphere
 
     def _dish(self, cap):
         dish = self._createDish()
@@ -300,8 +309,8 @@ class QSC:
     def stepped(self, steppedKey: bool = True):
         self._stepped = steppedKey
         lowerWidth = self._width * Constants.STEP_PERCENTAGE
-        offset = (Constants.U_IN_MM * (self._width - lowerWidth) / 2)
-        return self.stemOffset([-offset, 0, 0])
+        offset = (Constants.U_IN_MM * (self._width - lowerWidth) / 2.0)
+        return self.stemOffset((-offset, 0.0, 0.0))
 
     def isoEnter(self, iso: bool = True):
         self._isoEnter = iso
@@ -317,6 +326,14 @@ class QSC:
 
     def row(self, row: int):
         self._row = row
+        height_adjustments = {
+            1: 4,
+            2: 1,
+            3: 0,
+            4: 1,
+            5: 2,
+        }.get(self._row)
+        self.height(self._height+height_adjustments)
         return self
 
     def filleting(self, value: float):
@@ -359,18 +376,22 @@ class QSC:
         return name
 
 
-c = QSC().row(3).width(1.25).length(2).stemRotation(90).isoEnter()
+c = QSC()  # .row(4)  # .width(1.25).length(2).stemRotation(90).isoEnter()
 # ci = (c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))homing(HomingType.SCOOPED)
-cb = c.build()
+for i in [(1,4), (2,1), (3,0), (4,1)]:
+    show_object(c.height(8).row(i[0]).build().translate((0, -20 * i[0], i[1]/2)))
+show_object(c.height(8).row(3).inverted().build().translate((0, -20 * 5, 0)))
+#cb = c.build()
+#show_object(c._createDish())
 
-r3 = (cq.Assembly(name=c.name())
-      .add(cb, name="cap")
-      )
+#r3 = (cq.Assembly(name=c.name())
+#      .add(cb, name="cap")
+#      )
 # r3i = ci.build()
 # show_object(r3, options={"alpha": 0, "color": (255, 10, 50)})
 # show_object(r3i.translate((19.05, 19.05, 0)), options={"alpha": 0, "color": (255, 10, 50)})
 # cq.exporters.export(r3, c.name()+".step", cq.exporters.ExportTypes.STEP)
 
-show_object(r3)
-r3.save(r3.name + ".step", "STEP")
+#show_object(r3)
+# r3.save(r3.name + ".step", "STEP")
 # cq.exporters.export(cb.rotate((0,0,0),(1,0,0),-90), r3.name+".stl")
