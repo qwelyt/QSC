@@ -6,11 +6,12 @@ import cadquery as cq
 
 # TODO
 # * Alps?
+# * Legends
 
 class HomingType(Enum):
-    BAR = auto()
-    SCOOPED = auto()
-    DOT = auto()
+    BAR = 1
+    SCOOPED = 2
+    DOT = 3
 
 
 class StemType(Enum):
@@ -333,7 +334,7 @@ class QSC:
             4: 1,
             5: 2,
         }.get(self._row)
-        self.height(self._height+height_adjustments)
+        self.height(self._height + height_adjustments)
         return self
 
     def filleting(self, value: float):
@@ -353,7 +354,7 @@ class QSC:
                 .stemCherryDiameter(self._stemCherryDiameter)
                 .stemVSlop(self._stemVSlop)
                 .stemHSlop(self._stemHSlop)
-                .disableStemSupport(self._stemSupport)
+                .disableStemSupport(not self._stemSupport)
                 .inverted(self._inverted)
                 .row(self._row)
                 )
@@ -376,22 +377,24 @@ class QSC:
         return name
 
 
-c = QSC()  # .row(4)  # .width(1.25).length(2).stemRotation(90).isoEnter()
-# ci = (c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))homing(HomingType.SCOOPED)
-for i in [(1,4), (2,1), (3,0), (4,1)]:
-    show_object(c.height(8).row(i[0]).build().translate((0, -20 * i[0], i[1]/2)))
-show_object(c.height(8).row(3).inverted().build().translate((0, -20 * 5, 0)))
-#cb = c.build()
-#show_object(c._createDish())
+def showcase():
+    c = QSC()
+    showcase = (cq.Assembly(name="QSC_showcase"))
+    for i in [(1, 4), (2, 1), (3, 0), (4, 1)]:
+        showcase.add(c.clone().row(i[0]).build().translate((0, -20 * i[0], i[1] / 2)))
+    for homingType in HomingType:
+        showcase.add(c.clone().row(3).homing(homingType).build().translate((20 * homingType.value, -20 * 3, 0)))
+    showcase.add(c.clone().row(3).inverted().build().translate((0, -20 * 5, 0)))
+    showcase.add(c.clone().isoEnter().build().translate((30, 0, 0)))
+    showcase.add(c.clone().width(1.75).length(1).stepped().build().translate((-30, 0, 0)))
+    showcase.add(c.clone().width(1.75).length(1).build().translate((-30, -20, 0)))
+    showcase.add(c.clone().width(6.25).inverted().build().translate((0, 30, 0)))
+    showcase.add(c.clone().width(2.75).build().translate((0, 30 + 20, 0)))
+    show_object(showcase)
+    showcase.save(showcase.name + ".step", "STEP")
+    cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
 
-#r3 = (cq.Assembly(name=c.name())
-#      .add(cb, name="cap")
-#      )
-# r3i = ci.build()
-# show_object(r3, options={"alpha": 0, "color": (255, 10, 50)})
-# show_object(r3i.translate((19.05, 19.05, 0)), options={"alpha": 0, "color": (255, 10, 50)})
-# cq.exporters.export(r3, c.name()+".step", cq.exporters.ExportTypes.STEP)
-
-#show_object(r3)
-# r3.save(r3.name + ".step", "STEP")
-# cq.exporters.export(cb.rotate((0,0,0),(1,0,0),-90), r3.name+".stl")
+showcase() # Comment out this line when doing your own thing
+# Build your own cap here
+# cap = QSC().build()
+# cq.exporters.export(cap.rotate((0,0,0),(1,0,0),-90), cap.name+".stl")
