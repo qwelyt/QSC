@@ -96,15 +96,19 @@ class QSC:
             wORl = capBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else capBB.xlen
             wORl = wORl - self._toMM(0.25) if self._isoEnter else wORl
             w = (wORl - self._wallThickness) / 2 - self._stemCherryDiameter / 2
-            h = self._height - self._topThickness - 0.2
-            d = self._topDiff + (self._height - h) + 1
+            h = self._height - self._topThickness - 0.4
+
+            topBB = cap.faces("<Z").section(h).findSolid().BoundingBox()
+            topLen = topBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else topBB.xlen
+            w2 = (topLen - self._wallThickness) / 2 - self._stemCherryDiameter / 2
+            diff = w - w2
 
             a = self._srect(0.5, w, op="none")
-            b = self._srect(0.5, w + d, op="none")
+            b = self._srect(0.5, w2, op="none")
 
             supportOffset = -(-(wORl - self._wallThickness) / 4 - self._stemCherryDiameter / 2 + 1)
             return (cq.Workplane("XY")
-                    .placeSketch(a, b.moved(cq.Location(cq.Vector(0, d / 2, h))))
+                    .placeSketch(a, b.moved(cq.Location(cq.Vector(0, -diff / 2, h))))
                     .loft()
                     .translate((0, supportOffset, 0))
                     )
@@ -267,6 +271,10 @@ class QSC:
         self._topDiff = diff
         return self
 
+    def dishThickness(self, thickness: float):
+        self._dishThickness = thickness
+        return self
+
     def stemType(self, type: StemType):
         self._stemType = type
         return self
@@ -350,6 +358,7 @@ class QSC:
                 .height(self._height)
                 .bottomWidth(self._bottomWidth)
                 .topDiff(self._topDiff)
+                .dishThickness(self._dishThickness)
                 .stemType(self._stemType)
                 .stemCherryDiameter(self._stemCherryDiameter)
                 .stemVSlop(self._stemVSlop)
@@ -360,12 +369,12 @@ class QSC:
                 )
 
     def build(self):
-        cap = self._base()
-        cap = self._dish(cap)
+        base = self._base()
+        cap = self._dish(base)
         cap = cap.fillet(self._fillet)
         cap = self._homing(cap)
         cap = cap.cut(self._hollow())
-        cap = cap.union(self._stemAndSupport(cap))
+        cap = cap.union(self._stemAndSupport(base))
 
         return cap.translate((0, 0, -self._height / 2))
 
@@ -394,7 +403,13 @@ def showcase():
     showcase.save(showcase.name + ".step", "STEP")
     cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
 
-showcase() # Comment out this line when doing your own thing
+
+# showcase() # Comment out this line when doing your own thing
 # Build your own cap here
 # cap = QSC().build()
 # cq.exporters.export(cap.rotate((0,0,0),(1,0,0),-90), cap.name+".stl")
+
+for i in range(1, 5):
+    cap = QSC().row(i)
+    # show_object(cap)
+    cq.exporters.export(cap.build().rotate((0, 0, 0), (1, 0, 0), -90), cap.name() + ".stl")
