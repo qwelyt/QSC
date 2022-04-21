@@ -5,7 +5,6 @@ from typing import Tuple
 
 # TODO
 # * Rows
-# * ISO
 # * Alps?
 
 class HomingType(Enum):
@@ -360,7 +359,7 @@ class QSC:
         return name
 
 
-c = QSC().row(3).width(1.25).length(2).stemRotation(90)
+c = QSC().row(3).width(1.25).length(2).stemRotation(90).isoEnter()
 # ci = (c.clone().stemOffset((12, 3, 0)).inverted().specialStabPlacement(((-20, 0, 0), (30, -3, 0)))homing(HomingType.SCOOPED)
 cb = c.build()
 
