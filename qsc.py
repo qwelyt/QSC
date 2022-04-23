@@ -31,7 +31,7 @@ class QSC:
     _height = 8  # mm
     _legend = None
     _fontSize = _height
-    _layerHeight = 1.2
+    _firstLayerHeight = 1.2
     _font = "Arial"
     _bottomWidth = 1  # u
     _topDiff = -7  # mm
@@ -149,11 +149,11 @@ class QSC:
         if self._legend is None:
             return (cap, None)
         nc = (cap.faces(sideSelector)
-              .workplane(offset=-self._layerHeight, centerOption="CenterOfMass")
+              .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
               )
         nw = cq.Workplane().copyWorkplane(nc)
-        c = nc.text(txt=self._legend, fontsize=self._fontSize, distance=self._layerHeight, font=self._font)
-        t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._layerHeight, font=self._font, combine='a', cut=False)
+        c = nc.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font)
+        t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, combine='a', cut=False)
         return (c, t)
 
     def _base(self):
@@ -284,10 +284,10 @@ class QSC:
         self._height = height
         return self
 
-    def legend(self, legend: str, fontSize: float = -1, layerHeight: float = 1.2, font: str = "Arial"):
+    def legend(self, legend: str, fontSize: float = -1, firstLayerHeight: float = 1.2, font: str = "Arial"):
         self._legend = legend
         self._fontSize = self._height if -1 else fontSize
-        self._layerHeight = layerHeight
+        self._firstLayerHeight = firstLayerHeight
         self._font = font
         return self
 
@@ -384,7 +384,7 @@ class QSC:
                 .width(self._width)
                 .length(self._length)
                 .height(self._height)
-                .legend(self._legend, self._fontSize, self._layerHeight, self._font)
+                .legend(self._legend, self._fontSize, self._firstLayerHeight, self._font)
                 .bottomWidth(self._bottomWidth)
                 .topDiff(self._topDiff)
                 .dishThickness(self._dishThickness)
