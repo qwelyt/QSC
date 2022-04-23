@@ -35,7 +35,7 @@ class QSC:
     _font = "Arial"
     _bottomWidth = 1  # u
     _topDiff = -7  # mm
-    _dishThickness = 1.2  # mm
+    _dishThickness = 1.8  # mm
     _stemType = StemType.CHERRY
     _stemOffset = (0, 0, 0)
     _stemRotation = 0
