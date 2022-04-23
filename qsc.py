@@ -29,6 +29,10 @@ class QSC:
     _width = 1  # u
     _length = 1  # u
     _height = 8  # mm
+    _legend = None
+    _fontSize = _height
+    _layerHeight = 1.2
+    _font = "Arial"
     _bottomWidth = 1  # u
     _topDiff = -7  # mm
     _dishThickness = 1.2  # mm
@@ -134,6 +138,23 @@ class QSC:
             w.add(s.translate((12, 0, 0)))
 
         return w.combine().rotate((0, 0, 0), (0, 0, 1), self._stemRotation)
+
+    def _addLegend(self, cap):
+        sideSelector = {
+            0: "<<Y[2]",
+            90: ">>X[2]",
+            180: ">>Y[2]",
+            270: "<<X[2]"
+        }.get(self._stemRotation)
+        if self._legend is None:
+            return (cap, None)
+        nc = (cap.faces(sideSelector)
+              .workplane(offset=-self._layerHeight, centerOption="CenterOfMass")
+              )
+        nw = cq.Workplane().copyWorkplane(nc)
+        c = nc.text(txt=self._legend, fontsize=self._fontSize, distance=self._layerHeight, font=self._font)
+        t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._layerHeight, font=self._font, combine='a', cut=False)
+        return (c, t)
 
     def _base(self):
         l = self._toMM(self._length)
@@ -263,6 +284,13 @@ class QSC:
         self._height = height
         return self
 
+    def legend(self, legend: str, fontSize: float = -1, layerHeight: float = 1.2, font: str = "Arial"):
+        self._legend = legend
+        self._fontSize = self._height if -1 else fontSize
+        self._layerHeight = layerHeight
+        self._font = font
+        return self
+
     def bottomWidth(self, width: float):
         self._bottomWidth = width
         return self
@@ -283,7 +311,7 @@ class QSC:
         self._stemOffset = offset
         return self
 
-    def stemRotation(self, rotation: float):
+    def stemRotation(self, rotation: int):
         self._stemRotation = rotation
         return self
 
@@ -356,6 +384,7 @@ class QSC:
                 .width(self._width)
                 .length(self._length)
                 .height(self._height)
+                .legend(self._legend, self._fontSize, self._layerHeight, self._font)
                 .bottomWidth(self._bottomWidth)
                 .topDiff(self._topDiff)
                 .dishThickness(self._dishThickness)
@@ -369,22 +398,52 @@ class QSC:
                 )
 
     def build(self):
-        base = self._base()
+        base = self._base().tag("base")
         cap = self._dish(base)
         cap = cap.fillet(self._fillet)
         cap = self._homing(cap)
         cap = cap.cut(self._hollow())
-        cap = cap.union(self._stemAndSupport(base))
+        cap = cap.union(self._stemAndSupport(cap))
+        capNlegend = self._addLegend(cap)
 
-        return cap.translate((0, 0, -self._height / 2))
+        if self._legend is not None:
+            return (
+                capNlegend[0].translate((0, 0, -self._height / 2)),
+                capNlegend[1].translate((0, 0, -self._height / 2))
+            )
+        return capNlegend[0].translate((0, 0, -self._height / 2)),
 
     def name(self):
         name = "qsc_row" + str(self._row)
         name = name + "_isoEnter" if self._isoEnter else name + "_" + str(self._width) + "x" + str(self._length)
         name = name + "_i" if self._inverted else name
         name = name + "_stepped" if self._stepped else name
+        name = name + "_" + self._legend if self._legend is not None else name
         return name
 
+    def show(self, rotate=False):
+        c = self.build()
+        if rotate:
+            show_object(self._rotate(c[0]), options={"color":(200,20,100)})
+            if self._legend is not None:
+                show_object(self._rotate(c[1]), options={"color":(90,200,40)})
+        else:
+            show_object(c[0], options={"color":(200,20,100)})
+            if self._legend is not None:
+                show_object(c[1], options={"color":(90,200,40)})
+        return self
+
+    def exportSTL(self):
+        c = self.build()
+        cq.exporters.export(self._rotate(c[0]), self.name() + ".stl")
+        if self._legend is not None:
+            cq.exporters.export(self._rotate(c[1]), self.name() + "_LEGEND" + ".stl")
+        return self
+
+    def _rotate(self, w):
+        return (w.rotate((0,0,0),(0,0,1),-self._stemRotation)
+                .rotate((0,0,0),(1,0,0),250)
+                )
 
 def showcase():
     c = QSC()
@@ -404,8 +463,5 @@ def showcase():
     cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
 
 
-showcase() # Comment out this line when doing your own thing
 # Build your own cap here
-# cap = QSC()
-#cq.exporters.export(cap.build().rotate((0, 0, 0), (1, 0, 0), -90), cap.name() + ".stl")
-
+QSC().legend("Hi").stemRotation(180).show()
