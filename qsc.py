@@ -370,8 +370,8 @@ class QSC:
         return self
 
     def fillet(self, value: float):
-        self._filetValue = value
-        return value
+        self._fillet = value
+        return self
 
     def row(self, row: int):
         self._row = row
@@ -384,10 +384,6 @@ class QSC:
         }.get(self._row)
         self.height(self._height + row_adjustments[0])
         self.topThickness(self._topThickness + row_adjustments[1])
-        return self
-
-    def filleting(self, value: float):
-        self._fillet = value
         return self
 
     def clone(self):
@@ -410,10 +406,16 @@ class QSC:
                 .row(self._row)
                 )
 
+    def _got_error(self, t):
+        show_object(cq.Workplane().text(t, fontsize=10, distance=1, cut=False, combine='a'))
+
     def build(self):
         base = self._base().tag("base")
         cap = self._dish(base)
-        cap = cap.fillet(self._fillet)
+        try:
+            cap = cap.fillet(self._fillet)
+        except BaseException:
+            raise Exception("Fillet too big", "Your fillet setting [" + str(self._fillet)+"] is too big for the current shape. Try reducing it or change dish depth")
         cap = self._homing(cap)
         cap = cap.cut(self._hollow())
         cap = cap.union(self._stemAndSupport(cap))
