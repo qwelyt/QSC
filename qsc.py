@@ -25,7 +25,7 @@ class Constants():
 
 class QSC:
     _wallThickness = 3  # mm
-    _topThickness = 2.4  # mm
+    _topThickness = 3  # mm
     _width = 1  # u
     _length = 1  # u
     _height = 8  # mm
@@ -100,21 +100,23 @@ class QSC:
             wORl = capBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else capBB.xlen
             wORl = wORl - self._toMM(0.25) if self._isoEnter else wORl
             w = (wORl - self._wallThickness) / 2 - self._stemCherryDiameter / 2
-            h = self._height - self._topThickness - 0.4
+            h = self._height - self._topThickness - 0.3
 
             topBB = cap.faces("<Z").section(h).findSolid().BoundingBox()
             topLen = topBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else topBB.xlen
+            topLen = topLen - self._toMM(0.25) if self._isoEnter else topLen
             w2 = (topLen - self._wallThickness) / 2 - self._stemCherryDiameter / 2
             diff = w - w2
 
-            a = self._srect(0.5, w, op="none")
-            b = self._srect(0.5, w2, op="none")
+            closing = 0.5
+            a = self._srect(0.5, w+closing, op="none")
+            b = self._srect(0.5, w2+closing, op="none")
 
-            supportOffset = -(-(wORl - self._wallThickness) / 4 - self._stemCherryDiameter / 2 + 1)
+            supportOffset = (wORl - self._wallThickness) / 4 + self._stemCherryDiameter/2 -1
             return (cq.Workplane("XY")
-                    .placeSketch(a, b.moved(cq.Location(cq.Vector(0, -diff / 2, h))))
+                    .placeSketch(a, b.moved(cq.Location(cq.Vector(0, diff / 2, h))))
                     .loft()
-                    .translate((0, supportOffset, 0))
+                    .translate((0, -supportOffset, 0))
                     )
         else:
             return (cq.Workplane("XY").box(2, 2, 2))
@@ -141,10 +143,10 @@ class QSC:
 
     def _addLegend(self, cap):
         sideSelector = {
-            0: "<<Y[2]",
-            90: ">>X[2]",
-            180: ">>Y[2]",
-            270: "<<X[2]"
+            0: ">>Y[2]",
+            90: "<<X[2]",
+            180: "<<Y[2]",
+            270: ">>X[2]"
         }.get(self._stemRotation)
         if self._legend is None:
             return (cap, None)
@@ -204,21 +206,22 @@ class QSC:
         isoOrNot = self._toMM(2) if self._isoEnter else self._toMM(self._width)
         w = isoOrNot - self._topDiff * -1 / 1.2
         l = self._toMM(self._length) - self._topDiff * -1 / 1.2
-        dd = pow((pow(w, 2) + pow(l, 2)), 0.5)
+        dd = pow((pow(w, 2) + pow(l, 2)), 0.5)+1
         row_adjustments = {
-            1: (2, 0.5),
-            2: (1, 0.2),
-            3: (0, 0),
-            4: (-1, 0.2),
-            5: (0, 0)
+            # (extra DD, translateY, translateZ, rotation)
+            1: (2, 0, -1, 15),
+            2: (1.9, -1.2, 0, 7),
+            3: (0, 0, 0, 0),
+            4: (1.5, 0, 0, -10),
+            5: (0, 0, 0, 0),
         }.get(self._row)
-        dishT = self._dishThickness - row_adjustments[1]
-        s_x, s_y, s_z = dd / 2 / dishT, dd / 2 / dishT, 1.0
+        dd = dd + row_adjustments[0]
+        s_x, s_y, s_z = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness, 1.0
         scale_matrix = cq.Matrix(
             [
                 [s_x, 0.0, 0.0, 0.0],
                 [0.0, s_y, 0.0, 0.0],
-                [0.0, row_adjustments[0], s_z, 0.0],
+                [0.0, 0.0, s_z, 0.0],
                 [0.0, 0.0, 0.0, 1.0],
             ]
         )
@@ -226,7 +229,16 @@ class QSC:
                          .makeSphere(self._dishThickness, angleDegrees1=-90)
                          .transformGeometry(scale_matrix)
                          )
-        return scaled_sphere
+        if self._inverted:
+            return scaled_sphere
+
+        b = cq.Solid.makeCylinder(self._dishThickness, dd).transformGeometry(scale_matrix)
+        return (cq.Workplane()
+                .add(scaled_sphere)
+                .union(b)
+                .translate((0, row_adjustments[1], row_adjustments[2]))
+                .rotate((0, 0, 0), (1, 0, 0), row_adjustments[3])
+                )
 
     def _dish(self, cap):
         dish = self._createDish()
@@ -286,7 +298,7 @@ class QSC:
 
     def legend(self, legend: str, fontSize: float = -1, firstLayerHeight: float = 1.2, font: str = "Arial"):
         self._legend = legend
-        self._fontSize = self._height if -1 else fontSize
+        self._fontSize = self._height if fontSize == -1 else fontSize
         self._firstLayerHeight = firstLayerHeight
         self._font = font
         return self
@@ -353,7 +365,7 @@ class QSC:
         self._isoEnter = iso
         self.width(1.5)
         self.length(2)
-        self.stemRotation(270)
+        self.stemRotation(90)
         self.fillet(0.3)
         return self
 
@@ -363,14 +375,15 @@ class QSC:
 
     def row(self, row: int):
         self._row = row
-        height_adjustments = {
-            1: 4,
-            2: 1,
-            3: 0,
-            4: 1,
-            5: 2,
+        row_adjustments = {
+            1: (4,2),
+            2: (1,0.5),
+            3: (0,0),
+            4: (1,0.5),
+            5: (2,0),
         }.get(self._row)
-        self.height(self._height + height_adjustments)
+        self.height(self._height + row_adjustments[0])
+        self.topThickness(self._topThickness + row_adjustments[1])
         return self
 
     def filleting(self, value: float):
@@ -411,7 +424,7 @@ class QSC:
                 capNlegend[0].translate((0, 0, -self._height / 2)),
                 capNlegend[1].translate((0, 0, -self._height / 2))
             )
-        return capNlegend[0].translate((0, 0, -self._height / 2)),
+        return (capNlegend[0].translate((0, 0, -self._height / 2)), None)
 
     def name(self):
         name = "qsc_row" + str(self._row)
@@ -424,13 +437,13 @@ class QSC:
     def show(self, rotate=False):
         c = self.build()
         if rotate:
-            show_object(self._rotate(c[0]), options={"color":(200,20,100)})
+            show_object(self._rotate(c[0]), options={"color": (200, 20, 100)})
             if self._legend is not None:
-                show_object(self._rotate(c[1]), options={"color":(90,200,40)})
+                show_object(self._rotate(c[1]), options={"color": (90, 200, 40)})
         else:
-            show_object(c[0], options={"color":(200,20,100)})
+            show_object(c[0], options={"color": (200, 20, 100)})
             if self._legend is not None:
-                show_object(c[1], options={"color":(90,200,40)})
+                show_object(c[1], options={"color": (90, 200, 40)})
         return self
 
     def exportSTL(self):
@@ -441,27 +454,41 @@ class QSC:
         return self
 
     def _rotate(self, w):
-        return (w.rotate((0,0,0),(0,0,1),-self._stemRotation)
-                .rotate((0,0,0),(1,0,0),250)
+        return (w.rotate((0, 0, 0), (0, 0, 1), -self._stemRotation)
+                .rotate((0, 0, 0), (1, 0, 0), 250)
                 )
 
+
 def showcase():
+    print("=== Build showcase ==")
     c = QSC()
     showcase = (cq.Assembly(name="QSC_showcase"))
     for i in [(1, 4), (2, 1), (3, 0), (4, 1)]:
-        showcase.add(c.clone().row(i[0]).build().translate((0, -20 * i[0], i[1] / 2)))
+        showcase.add(c.clone().row(i[0]).legend(str(i[0]), fontSize=6).build()[0].translate((0, -20 * i[0], i[1] / 2)))
+        print("Built r"+str(i[0]))
     for homingType in HomingType:
-        showcase.add(c.clone().row(3).homing(homingType).build().translate((20 * homingType.value, -20 * 3, 0)))
-    showcase.add(c.clone().row(3).inverted().build().translate((0, -20 * 5, 0)))
-    showcase.add(c.clone().isoEnter().build().translate((30, 0, 0)))
-    showcase.add(c.clone().width(1.75).length(1).stepped().build().translate((-30, 0, 0)))
-    showcase.add(c.clone().width(1.75).length(1).build().translate((-30, -20, 0)))
-    showcase.add(c.clone().width(6.25).inverted().build().translate((0, 30, 0)))
-    showcase.add(c.clone().width(2.75).build().translate((0, 30 + 20, 0)))
+        showcase.add(c.clone().row(3).homing(homingType).build()[0].translate((20 * homingType.value, -20 * 3, 0)))
+        print("Built homing " + homingType.name)
+    showcase.add(c.clone().row(3).inverted().build()[0].translate((0, -20 * 5, 0)))
+    print("Built inverted r3")
+    showcase.add(c.clone().isoEnter().build()[0].translate((30, 0, 0)))
+    print("Built ISO enter")
+    showcase.add(c.clone().width(1.75).length(1).stepped().build()[0].translate((-30, 0, 0)))
+    print("1.75 Stepped")
+    showcase.add(c.clone().width(1.75).length(1).build()[0].translate((-30, -20, 0)))
+    print("1.75")
+    showcase.add(c.clone().width(6.25).inverted().build()[0].translate((0, 30, 0)))
+    print("6.25 inverted")
+    showcase.add(c.clone().width(2.75).build()[0].translate((0, 30 + 20, 0)))
+    print("2.75")
     show_object(showcase)
     showcase.save(showcase.name + ".step", "STEP")
     cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
 
 
+#showcase()
 # Build your own cap here
-QSC().legend("Hi").stemRotation(180).show()
+#for i in [1,2,3,4]:
+#    c = QSC().row(i).legend(str(i), fontSize=6)
+#    h = c._height
+#    show_object(c.build()[0].translate((0, -i * 19, h / 2)))
