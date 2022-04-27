@@ -2,6 +2,7 @@ from enum import Enum, auto
 from typing import Tuple
 
 import cadquery as cq
+from OCP.StdFail import StdFail_NotDone
 
 
 # TODO
@@ -24,6 +25,7 @@ class Constants():
 
 
 class QSC:
+    _debug = False
     _wallThickness = 3  # mm
     _topThickness = 3  # mm
     _width = 1  # u
@@ -109,10 +111,10 @@ class QSC:
             diff = w - w2
 
             closing = 0.5
-            a = self._srect(0.5, w+closing, op="none")
-            b = self._srect(0.5, w2+closing, op="none")
+            a = self._srect(0.5, w + closing, op="none")
+            b = self._srect(0.5, w2 + closing, op="none")
 
-            supportOffset = (wORl - self._wallThickness) / 4 + self._stemCherryDiameter/2 -1
+            supportOffset = (wORl - self._wallThickness) / 4 + self._stemCherryDiameter / 2 - 1
             return (cq.Workplane("XY")
                     .placeSketch(a, b.moved(cq.Location(cq.Vector(0, diff / 2, h))))
                     .loft()
@@ -164,7 +166,7 @@ class QSC:
             bw = self._toMM(self._width)
             w1 = bw * Constants.STEP_PERCENTAGE
             high = self._box(w1, l, self._height, self._topDiff, 0, 0, "none")
-            step = self._box(bw, l, self._height / 2, self._topDiff + (self._height / 2) - 0.5, 0, 0, "none")
+            step = self._box(bw, l, self._height / 2, self._topDiff / 2, 0, 0, "none")
             return high.translate((-w1 / 4.6, 0, 0)).add(step.translate((0, 0, 0))).combine()
         elif self._isoEnter:
             w = self._toMM(self._width)
@@ -206,16 +208,17 @@ class QSC:
         isoOrNot = self._toMM(2) if self._isoEnter else self._toMM(self._width)
         w = isoOrNot - self._topDiff * -1 / 1.2
         l = self._toMM(self._length) - self._topDiff * -1 / 1.2
-        dd = pow((pow(w, 2) + pow(l, 2)), 0.5)+1
+        dd = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
         row_adjustments = {
-            # (extra DD, translateY, translateZ, rotation)
-            1: (2, 0, -1, 15),
-            2: (1.9, -1.2, 0, 7),
-            3: (0, 0, 0, 0),
-            4: (1.5, 0, 0, -10),
-            5: (0, 0, 0, 0),
+            # (extra DD, extraDDinverted, translateY, translateZ, rotation)
+            1: (2.0, 2.0, 0.0, -1.0, 15.0),
+            2: (1.9, 1.9, -1.2, -0.03, 7.0),
+            3: (0.0, 0.0, 0.0, 0.0, 0.0),
+            4: (1.5, 1.55, 0.0, -0.23, -10.0),
+            5: (0.0, 0.0, 0.0, 0.0, 0.0),
         }.get(self._row)
         dd = dd + row_adjustments[0]
+        dd = dd + row_adjustments[1] if self._inverted else dd
         s_x, s_y, s_z = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness, 1.0
         scale_matrix = cq.Matrix(
             [
@@ -236,8 +239,8 @@ class QSC:
         return (cq.Workplane()
                 .add(scaled_sphere)
                 .union(b)
-                .translate((0, row_adjustments[1], row_adjustments[2]))
-                .rotate((0, 0, 0), (1, 0, 0), row_adjustments[3])
+                .translate((0, row_adjustments[2], row_adjustments[3]))
+                .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
                 )
 
     def _dish(self, cap):
@@ -246,10 +249,23 @@ class QSC:
         h = capBB.zmax
         if self._inverted:
             i = cap.intersect(dish.translate((0, 0, h - self._dishThickness)))
+            if self._debug:
+                #show_object(i, options={"color": (0, 0, 0)})
+                #show_object(dish.translate((0, 0, h - self._dishThickness)), options={"color": (255, 255, 255), "alpha": 0.7})
+                show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2))
+                show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness))
+            cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2, "cut")
             cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness, "cut")
+            if self._debug:
+                pass
+                #show_object(cap.translate((0,30,0)))
+                #show_object(i.translate((0,50,0)))
             cap = cap.union(i)
         else:
             cap = cap.cut(dish.translate((0, 0, h)))
+            if self._debug:
+                show_object(dish.translate((0, 0, h)), options={"color": (255, 255, 255), "alpha": 0.7})
+
 
         return cap
 
@@ -376,11 +392,11 @@ class QSC:
     def row(self, row: int):
         self._row = row
         row_adjustments = {
-            1: (4,2),
-            2: (1,0.5),
-            3: (0,0),
-            4: (1,0.5),
-            5: (2,0),
+            1: (4, 2),
+            2: (1, 0.5),
+            3: (0, 0),
+            4: (1, 0.5),
+            5: (2, 0),
         }.get(self._row)
         self.height(self._height + row_adjustments[0])
         self.topThickness(self._topThickness + row_adjustments[1])
@@ -406,16 +422,60 @@ class QSC:
                 .row(self._row)
                 )
 
-    def _got_error(self, t):
-        show_object(cq.Workplane().text(t, fontsize=10, distance=1, cut=False, combine='a'))
+    def _edges(self, e):
+        es = []
+        for edge in e:
+            es.append((edge.Length(), edge))
+        es.sort(key=lambda tup: tup[0])
+        return es
+
+    def _debug_edges(self, shape):
+        edges = self._edges(shape.edges().vals())
+        print(edges[0])
+        if self._show_object_exists():
+            show_object(edges[0][1], options={"color": {255, 0, 0}})
+        return edges
+
+    def debug(self):
+        self._debug = True
+        self.build()
+
+    def isValid(self):
+        base = self._base().tag("base")
+        cap = self._dish(base)
+        faces = cap.faces("%Plane")
+        if self._show_object_exists():
+            show_object(faces, options={"color":(255,0,0)})
+            #show_object(cap.faces("not %Plane"), options={"alpha":0.99, "color":(0,0,255)})
+        face_count = len(faces.edges().vals())
+        valid = face_count == 4
+        if not valid:
+            self._printSettings()
+            print(face_count)
+        return valid
+
 
     def build(self):
         base = self._base().tag("base")
         cap = self._dish(base)
-        try:
-            cap = cap.fillet(self._fillet)
-        except BaseException:
-            raise Exception("Fillet too big", "Your fillet setting [" + str(self._fillet)+"] is too big for the current shape. Try reducing it or change dish depth")
+
+        if self._debug:
+            show_object(base, options={"color": (0, 245, 0), "alpha": 0.4})
+            show_object(cap, options={"color": (0, 0, 200), "alpha": 0.4})
+            edges = self._edges(cap.edges().vals())
+            show_object(edges[0][1], options={"color": (255, 0, 0)})
+            print(edges[0][0])
+            #show_object(cap.translate((0, cap.findSolid().BoundingBox().ylen + 4, 0)))
+
+        # self._debug_edges(cap)
+        if self._fillet > 0:
+            try:
+                cap = cap.fillet(self._fillet)
+            except StdFail_NotDone:
+                self._printSettings()
+                raise ValueError("Fillet too big",
+                                 "Your fillet setting [" + str(self._fillet) + "] is too big for the current shape (r" + str(self._row) + ", " + str(self._width) + "x" + str(
+                                     self._length) + "). Try reducing it or change dish depth. Smallest edge is" + str(self._debug_edges(cap)[0]))
         cap = self._homing(cap)
         cap = cap.cut(self._hollow())
         cap = cap.union(self._stemAndSupport(cap))
@@ -436,16 +496,24 @@ class QSC:
         name = name + "_" + self._legend if self._legend is not None else name
         return name
 
+    def _show_object_exists(self):
+        try:
+            show_object(cq.Workplane())
+            return True
+        except:
+            return False
+
     def show(self, rotate=False):
-        c = self.build()
-        if rotate:
-            show_object(self._rotate(c[0]), options={"color": (200, 20, 100)})
-            if self._legend is not None:
-                show_object(self._rotate(c[1]), options={"color": (90, 200, 40)})
-        else:
-            show_object(c[0], options={"color": (200, 20, 100)})
-            if self._legend is not None:
-                show_object(c[1], options={"color": (90, 200, 40)})
+        if self._show_object_exists():
+            c = self.build()
+            if rotate:
+                show_object(self._rotate(c[0]), options={"color": (200, 20, 100)})
+                if self._legend is not None:
+                    show_object(self._rotate(c[1]), options={"color": (90, 200, 40)})
+            else:
+                show_object(c[0], options={"color": (200, 20, 100)})
+                if self._legend is not None:
+                    show_object(c[1], options={"color": (90, 200, 40)})
         return self
 
     def exportSTL(self):
@@ -460,6 +528,9 @@ class QSC:
                 .rotate((0, 0, 0), (1, 0, 0), 250)
                 )
 
+    def _printSettings(self):
+        print(self.__dict__)
+
 
 def showcase():
     print("=== Build showcase ==")
@@ -467,7 +538,7 @@ def showcase():
     showcase = (cq.Assembly(name="QSC_showcase"))
     for i in [(1, 4), (2, 1), (3, 0), (4, 1)]:
         showcase.add(c.clone().row(i[0]).legend(str(i[0]), fontSize=6).build()[0].translate((0, -20 * i[0], i[1] / 2)))
-        print("Built r"+str(i[0]))
+        print("Built r" + str(i[0]))
     for homingType in HomingType:
         showcase.add(c.clone().row(3).homing(homingType).build()[0].translate((20 * homingType.value, -20 * 3, 0)))
         print("Built homing " + homingType.name)
@@ -478,19 +549,26 @@ def showcase():
     showcase.add(c.clone().width(1.75).length(1).stepped().build()[0].translate((-30, 0, 0)))
     print("1.75 Stepped")
     showcase.add(c.clone().width(1.75).length(1).build()[0].translate((-30, -20, 0)))
-    print("1.75")
+
     showcase.add(c.clone().width(6.25).inverted().build()[0].translate((0, 30, 0)))
     print("6.25 inverted")
     showcase.add(c.clone().width(2.75).build()[0].translate((0, 30 + 20, 0)))
     print("2.75")
-    show_object(showcase)
+    if "show_object" in locals():
+        show_object(showcase)
     showcase.save(showcase.name + ".step", "STEP")
     cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
 
 
-#showcase()
+# showcase()
 # Build your own cap here
-#for i in [1,2,3,4]:
+# for i in [1,2,3,4]:
 #    c = QSC().row(i).legend(str(i), fontSize=6)
 #    h = c._height
 #    show_object(c.build()[0].translate((0, -i * 19, h / 2)))
+# QSC().row(4).stepped().show()#.width(1).fillet(0).build()#.show()
+#cap = QSC().row(3).width(1).length(1).inverted().dishThickness(1.82)#.fillet(0)
+#valid = cap.isValid()
+#valid = QSC().row(4).width(2).isValid()
+#print(valid)
+#cap.show()
