@@ -86,7 +86,7 @@ class QSC:
     _row = 3
     _topRectFillet = 2
     _bottomRectFillet = 1
-    _bottomFillet = 1
+    _bottomFillet = 0.6
     _topFillet = 0.6
     _step = 10
 
@@ -235,7 +235,7 @@ class QSC:
                 270: ">>X[3]"
             },
             4: {
-                0: ">>Y[5]",
+                0: ">>Y[3]",
                 90: "<<X[2]",
                 180: "<<Y[2]",
                 270: ">>X[3]"
@@ -793,4 +793,5 @@ def sizes():
 
 
 #sizes()
-show_object(QSC().row(1).width(2).stepped().build()[0])
+#show_object(QSC().row(1).width(2).stepped().build()[0])
+QSC().row(4).inverted(True).legend("Z", fontSize=6).show()
