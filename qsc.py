@@ -1,8 +1,40 @@
 from enum import Enum, auto
-from typing import Tuple
+from typing import Tuple, Iterable
 
 import cadquery as cq
 from OCP.StdFail import StdFail_NotDone
+
+
+def _maxFillet(
+        self: cq.Shape,
+        edgeList: Iterable[cq.Edge],
+        tolerance=0.1,
+        maxIterations: int = 10,
+) -> float:
+    if not self.isValid():
+        raise ValueError("Invalid Shape")
+    window_max = 2 * self.BoundingBox().DiagonalLength
+    window_min = 0
+    for i in range(maxIterations):
+        window_mid = (window_min + window_max) / 2
+        try:
+            if not self.fillet(window_mid, edgeList).isValid():
+                raise StdFail_NotDone
+        except StdFail_NotDone:
+            window_max = window_mid
+            continue
+
+        if window_mid - window_min <= tolerance:
+            return window_mid
+        else:
+            window_min = window_mid
+
+    raise RuntimeError(
+        f"Failed to find the max value within {tolerance} in {maxIterations}, {window_mid}"
+    )
+
+
+cq.Shape.maxFillet = _maxFillet
 
 
 # TODO
@@ -21,12 +53,13 @@ class StemType(Enum):
 
 class Constants():
     STEP_PERCENTAGE = 0.7142857142857143
+    STEP_PERCENTAGE_OF_TOTAL = 28.57142857142857
     U_IN_MM = 19.05
 
 
 class QSC:
     _debug = False
-    _wallThickness = 3  # mm
+    _wallThickness = 1.5  # mm
     _topThickness = 3  # mm
     _width = 1  # u
     _length = 1  # u
@@ -51,7 +84,11 @@ class QSC:
     _stepped = False
     _isoEnter = False
     _row = 3
-    _fillet = 0.685
+    _topRectFillet = 2
+    _bottomRectFillet = 1
+    _bottomFillet = 1
+    _topFillet = 0.6
+    _step = 10
 
     def __init__(self):
         pass
@@ -94,12 +131,13 @@ class QSC:
                     .chamfer(0.24)
                     )
         else:
-            return (cq.Workplane().box(2, 2, stemHeight))
+            return cq.Workplane().box(2, 2, stemHeight)
 
     def _buildStemSupport(self, cap):
         if self._stemType == StemType.CHERRY:
-            capBB = cap.findSolid().BoundingBox()
-            wORl = capBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else capBB.xlen
+            bottomBB = cap.faces("<Z").findSolid().BoundingBox()
+            wORl = bottomBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else bottomBB.xlen
+            wORl = wORl - self._bottomFillet * 2
             wORl = wORl - self._toMM(0.25) if self._isoEnter else wORl
             w = (wORl - self._wallThickness) / 2 - self._stemCherryDiameter / 2
             h = self._height - self._topThickness - 0.3
@@ -128,6 +166,39 @@ class QSC:
         w = cq.Workplane("XY")
         s = self._stem().union(self._buildStemSupport(cap)) if self._stemSupport else self._stem()
         w.add(s.translate(self._stemOffset))
+        ##old_edges = cap.edges().objects
+        #added = (cap.faces("<Z")
+        #         .sketch()
+        #         #.push([(12,0)])
+        #         .circle(self._stemCherryDiameter/2)
+        #         .rect(1.5, 4.2, mode="s")
+        #         .rect(4.2,1.5,  mode="s")
+        #         .finalize()
+        #         .extrude(until="next")
+        #         )
+        #p = (cq.Workplane()
+        #     .box(20, 20, 20)
+        #     .faces(">Z")
+        #     .shell(2)
+        #     .faces(">Z")
+        #     .sketch()
+        #     .circle(5)
+        #     .rect(5,3, mode="s")
+        #     .finalize()
+        #     .extrude(until="next")
+        #     )
+        ##show_object(added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1))))
+        #added = (added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1)))
+        #         .chamfer(0.24)
+        #         )
+        #show_object(added)
+        #show_object(p.faces("<Z").workplane().faces(cq.selectors.RadiusNthSelector(1)))
+        #new_edges = added.edges().objects
+        #added = added.newObject(list(set(new_edges)-set(old_edges)))
+        #show_object(added.edges("<Z").chamfer(0.24))
+        #show_object(cap.faces("<Z").sketch().push([(12,0)]).circle(self._stemCherryDiameter/2).finalize().extrude(until="next").last().faces("<Z"))
+        #show_object(w)
+
 
         if self._specialStabPlacement is not None:
             m = s.translate(self._specialStabPlacement[0])
@@ -141,54 +212,87 @@ class QSC:
             w.add(s.translate((-12, 0, 0)))
             w.add(s.translate((12, 0, 0)))
 
-        return w.combine().rotate((0, 0, 0), (0, 0, 1), self._stemRotation)
+        return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), self._stemRotation))
 
     def _addLegend(self, cap):
         sideSelector = {
-            0: ">>Y[2]",
-            90: "<<X[2]",
-            180: "<<Y[2]",
-            270: ">>X[2]"
-        }.get(self._stemRotation)
+            1: {
+                0: ">>Y[3]",
+                90: "<<X[2]",
+                180: "<<Y[2]",
+                270: ">>X[3]"
+            },
+            2: {
+                0: ">>Y[3]",
+                90: "<<X[4]",
+                180: "<<Y[4]",
+                270: ">>X[5]"
+            },
+            3: {
+                0: ">>Y[3]",
+                90: "<<X[2]",
+                180: "<<Y[2]",
+                270: ">>X[3]"
+            },
+            4: {
+                0: ">>Y[5]",
+                90: "<<X[2]",
+                180: "<<Y[2]",
+                270: ">>X[3]"
+            }
+        }.get(self._row).get(self._stemRotation)
         if self._legend is None:
-            return (cap, None)
+            return cap, None
+        # show_object(cap.faces(sideSelector))
         nc = (cap.faces(sideSelector)
               .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
               )
         nw = cq.Workplane().copyWorkplane(nc)
         c = nc.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font)
         t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, combine='a', cut=False)
-        return (c, t)
+        return c, t
 
     def _base(self):
         l = self._toMM(self._length)
+        w = self._toMM(self._width)
         if self._stepped:
-            bw = self._toMM(self._width)
-            w1 = bw * Constants.STEP_PERCENTAGE
-            high = self._box(w1, l, self._height, self._topDiff, 0, 0, "none")
-            step = self._box(bw, l, self._height / 2, self._topDiff / 2, 0, 0, "none")
-            return high.translate((-w1 / 4.6, 0, 0)).add(step.translate((0, 0, 0))).combine()
+            stepWidth = (w/100)*Constants.STEP_PERCENTAGE_OF_TOTAL
+            highWidth = w-stepWidth
+            heightDivider = 2 if not self._row == 1 else 2
+            high = self._box(highWidth, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            step = self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            step = (step.faces(">Z")
+                    .sketch()
+                    .rect(w, l)
+                    .finalize()
+                    .extrude(-self._height/heightDivider, "cut")
+                    )
+            return high.translate((-stepWidth/2, 0, 0)).add(step).combine()
         elif self._isoEnter:
-            w = self._toMM(self._width)
             w6 = w / 6
             lower = self._box(w - w6, l, self._height, self._topDiff, 0, 0, "none")
             upper = self._box(w, l / 2, self._height, self._topDiff, 0, 0, "none")
             return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
         else:
-            w = self._toMM(self._width)
-            return self._box(w, l, self._height, self._topDiff, 0, 0, "none")
+            return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
 
     def _hollow(self):
-        il = self._toMM(self._length) - self._wallThickness
-        iw = self._toMM(self._width) - self._wallThickness
+        il = self._toMM(self._length) - (self._wallThickness * 2)
+        iw = self._toMM(self._width) - (self._wallThickness * 2)
         if self._stepped:
-            bw = self._toMM(self._width)
-            w1 = bw * Constants.STEP_PERCENTAGE
+            stepWidth = (iw/100)*Constants.STEP_PERCENTAGE_OF_TOTAL
+            highWidth = iw-stepWidth
+            heightDivider = 2 if not self._row == 1 else 3
             ihHigh = self._height - self._topThickness
-            ihStep = self._height / 2 - self._topThickness
-            high = self._box(w1 - self._wallThickness, il, ihHigh, self._topDiff, 0, 0, "none")
-            step = self._box(iw, il, ihStep, self._topDiff + (self._height / 2) - 0.5, 0, 0, "none")
-            return high.translate((-w1 / 4.6, 0, 0)).add(step.translate((0, 0, 0))).combine()
+            high = self._box(highWidth, il, ihHigh, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            step = self._box(iw, il, ihHigh, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            step = (step.faces(">Z")
+                    .sketch()
+                    .rect(iw, il)
+                    .finalize()
+                    .extrude(-self._height/heightDivider, "cut")
+                    )
+            return high.translate((-stepWidth/2, 0, 0)).add(step).combine()
         elif self._isoEnter:
             ih = self._height - self._topThickness
             il2 = self._toMM(1) - self._wallThickness
@@ -212,9 +316,9 @@ class QSC:
         row_adjustments = {
             # (extra DD, extraDDinverted, translateY, translateZ, rotation)
             1: (2.0, 2.0, 0.0, -1.0, 15.0),
-            2: (1.9, 1.9, -1.2, -0.03, 7.0),
-            3: (0.0, 0.0, 0.0, 0.0, 0.0),
-            4: (1.5, 1.55, 0.0, -0.23, -10.0),
+            2: (2, 1.9, -1.2, -1, 7.0),
+            3: (0.0, 0.0, 0.0, -0.1, 0.0),
+            4: (0.0, 1.55, 1.2, -1.0, -10.0),
             5: (0.0, 0.0, 0.0, 0.0, 0.0),
         }.get(self._row)
         dd = dd + row_adjustments[0]
@@ -248,24 +352,24 @@ class QSC:
         capBB = cap.findSolid().BoundingBox()
         h = capBB.zmax
         if self._inverted:
-            i = cap.intersect(dish.translate((0, 0, h - self._dishThickness)))
+            i = cap.intersect(dish.translate((0, 0, h - self._dishThickness - 0.02)))
             if self._debug:
-                #show_object(i, options={"color": (0, 0, 0)})
-                #show_object(dish.translate((0, 0, h - self._dishThickness)), options={"color": (255, 255, 255), "alpha": 0.7})
-                show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2))
-                show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness))
-            cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2, "cut")
+                pass
+                # show_object(i, options={"color": (0, 0, 0)})
+                # show_object(dish.translate((0, 0, h - self._dishThickness)), options={"color": (255, 255, 255), "alpha": 0.7})
+                # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2))
+                # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness))
+            cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness * 2, "cut")
             cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness, "cut")
             if self._debug:
                 pass
-                #show_object(cap.translate((0,30,0)))
-                #show_object(i.translate((0,50,0)))
+                # show_object(cap.translate((0,30,0)))
+                # show_object(i.translate((0,50,0)))
             cap = cap.union(i)
         else:
             cap = cap.cut(dish.translate((0, 0, h)))
             if self._debug:
-                show_object(dish.translate((0, 0, h)), options={"color": (255, 255, 255), "alpha": 0.7})
-
+                show_object(dish.translate((0, 0, h)), options={"color": (255, 255, 255), "alpha": 0.3})
 
         return cap
 
@@ -382,11 +486,22 @@ class QSC:
         self.width(1.5)
         self.length(2)
         self.stemRotation(90)
-        self.fillet(0.3)
         return self
 
-    def fillet(self, value: float):
-        self._fillet = value
+    def topRectFillet(self, value: float):
+        self._topRectFillet = value
+        return self
+
+    def bottomRectFillet(self, value: float):
+        self._bottomRectFillet = value
+        return self
+
+    def topFillet(self, value: float):
+        self._topFillet = value
+        return self
+
+    def bottomFillet(self, value: float):
+        self._bottomFillet = value
         return self
 
     def row(self, row: int):
@@ -395,11 +510,15 @@ class QSC:
             1: (4, 2),
             2: (1, 0.5),
             3: (0, 0),
-            4: (1, 0.5),
+            4: (1, 1),
             5: (2, 0),
         }.get(self._row)
         self.height(self._height + row_adjustments[0])
         self.topThickness(self._topThickness + row_adjustments[1])
+        return self
+
+    def step(self, steps):
+        self._step = steps
         return self
 
     def clone(self):
@@ -420,6 +539,10 @@ class QSC:
                 .disableStemSupport(not self._stemSupport)
                 .inverted(self._inverted)
                 .row(self._row)
+                .topRectFillet(self._topRectFillet)
+                .topFillet(self._topFillet)
+                .bottomRectFillet(self._bottomRectFillet)
+                .bottomFillet(self._bottomFillet)
                 )
 
     def _edges(self, e):
@@ -438,55 +561,92 @@ class QSC:
 
     def debug(self):
         self._debug = True
-        self.build()
+        return self.build()
 
     def isValid(self):
         base = self._base().tag("base")
         cap = self._dish(base)
-        faces = cap.faces("%Plane")
+        plane_faces = cap.faces("%Plane")
+        non_plane_faces = cap.faces("not %Plane")
         if self._show_object_exists():
-            show_object(faces, options={"color":(255,0,0)})
-            #show_object(cap.faces("not %Plane"), options={"alpha":0.99, "color":(0,0,255)})
-        face_count = len(faces.edges().vals())
-        valid = face_count == 4
+            show_object(plane_faces, options={"color": (255, 0, 0)})
+            # show_object(non_plane_faces, options={"color":(0,0,255), "alpha":0.99})
+            # show_object(cap.plane_faces("not %Plane"), options={"alpha":0.99, "color":(0,0,255)})
+        plane_face_count = len(plane_faces.edges().vals())
+        non_plane_face_count = len(non_plane_faces.edges().vals())
+        valid = plane_face_count == 4 and non_plane_face_count == 14
         if not valid:
             self._printSettings()
-            print(face_count)
-        return valid
+            print(plane_face_count, non_plane_face_count)
+        return (valid, cap)
 
-
-    def build(self):
-        base = self._base().tag("base")
+    def maxPossibleFillet(self):
+        base = self._base()
         cap = self._dish(base)
+        shape = cap.findSolid()
 
-        if self._debug:
-            show_object(base, options={"color": (0, 245, 0), "alpha": 0.4})
-            show_object(cap, options={"color": (0, 0, 200), "alpha": 0.4})
-            edges = self._edges(cap.edges().vals())
-            show_object(edges[0][1], options={"color": (255, 0, 0)})
-            print(edges[0][0])
-            #show_object(cap.translate((0, cap.findSolid().BoundingBox().ylen + 4, 0)))
+        iterfillet = shape.maxFillet(shape.Edges(), 0.001, 1000)
+        return iterfillet
 
-        # self._debug_edges(cap)
-        if self._fillet > 0:
+    def _fillet(self, cap):
+        # maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.01, 100)
+        # maxStep = 0
+        if self._topFillet > 0:
             try:
-                cap = cap.fillet(self._fillet)
+                if self._stepped:
+                    # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
+                    selector = {
+                        1: ">Z[1]",
+                        2: ">Z[1]",
+                        3: ">Z[1]",
+                        4: ">Z[1]",
+                    }.get(self._row)
+                    cap = cap.faces(selector).fillet(self._topFillet)
+                # print("Top:",maxTop, "Step:",maxStep)
+                cap = cap.faces(">Z").fillet(self._topFillet)
             except StdFail_NotDone:
                 self._printSettings()
-                raise ValueError("Fillet too big",
-                                 "Your fillet setting [" + str(self._fillet) + "] is too big for the current shape (r" + str(self._row) + ", " + str(self._width) + "x" + str(
-                                     self._length) + "). Try reducing it or change dish depth. Smallest edge is" + str(self._debug_edges(cap)[0]))
-        cap = self._homing(cap)
-        cap = cap.cut(self._hollow())
-        cap = cap.union(self._stemAndSupport(cap))
-        capNlegend = self._addLegend(cap)
+                raise ValueError("Top fillet too big",
+                                 "Your top fillet setting [" + str(self._topFillet) + "] is too big for the current shape (r" + str(self._row)
+                                 + ", " + str(self._width) + "x" + str(self._length)
+                                 + "). Try reducing it.")
+            except Exception:
+                self._printSettings()
+                raise
+
+        if self._bottomFillet > 0:
+            try:
+                cap = cap.edges("<Z").fillet(self._bottomFillet)
+            except StdFail_NotDone:
+                self._printSettings()
+                raise ValueError("Bottom fillet too big",
+                                 "Your bottom fillet setting [" + str(self._bottomFillet) + "] is too big for the current shape (r" + str(self._row)
+                                 + ", " + str(self._width) + "x" + str(self._length)
+                                 + "). Try reducing it.")
+            except Exception:
+                self._printSettings()
+                raise
+
+        return cap
+
+    def build(self):
+        cap = self._base().tag("base")
+        cap = self._dish(cap) if self._step > 1 else cap
+        cap = self._fillet(cap) if self._step > 2 else cap
+        cap = self._homing(cap) if self._step > 3 else cap
+        cap = cap.cut(self._hollow()) if self._step > 4 else cap
+        cap = self._stemAndSupport(cap) if self._step > 5 else cap
+        cap, legend = self._addLegend(cap) if self._step > 6 else (cap, None)
 
         if self._legend is not None:
             return (
-                capNlegend[0].translate((0, 0, -self._height / 2)),
-                capNlegend[1].translate((0, 0, -self._height / 2))
+                cap.translate((0, 0, -self._height / 2)),
+                legend.translate((0, 0, -self._height / 2)) if legend is not None else None
             )
-        return (capNlegend[0].translate((0, 0, -self._height / 2)), None)
+        return (
+            cap.translate((0, 0, -self._height / 2)),
+            None
+        )
 
     def name(self):
         name = "qsc_row" + str(self._row)
@@ -560,15 +720,77 @@ def showcase():
     cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
 
 
+def all_rows():
+    for i in [1, 2, 3, 4]:
+        c = QSC().row(i).width(2).legend(str(i), fontSize=6)
+        h = c._height
+        show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
+
+
+def all_rows_with_legends(width):
+    for row in [1, 2, 3, 4]:
+        for rIdx, rotation in enumerate([0, 90, 180, 270]):
+            c = QSC().row(row).width(width).legend(str(row) + "." + str(rIdx), fontSize=6).stemRotation(rotation)
+            h = c._height
+            show_object(c.build()[0].translate((19 * width * rIdx, -(row - 1) * 19, h / 2)))
+
+
+def test_fillet():
+    for row in range(1, 5):
+        for width in [1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 6.25, 7]:
+            for type in ["normal", "inverted", "stepped"]:
+                q = QSC().row(row).width(width).fillet(1)
+                if type == "normal":
+                    q = q
+                elif type == "inverted":
+                    q = q.inverted()
+                elif type == "stepped":
+                    q = q.stepped()
+
+                try:
+                    f = q.maxPossibleFillet()
+                    print("Row", row, ", width", width, ", type", type, ":   ", f)
+                except RuntimeError:
+                    print("Failed to find max for row", row, "width", width, "type", type)
+
+
+# all_rows_with_legends(2)
+# all_rows()
+
 # showcase()
 # Build your own cap here
-# for i in [1,2,3,4]:
-#    c = QSC().row(i).legend(str(i), fontSize=6)
-#    h = c._height
-#    show_object(c.build()[0].translate((0, -i * 19, h / 2)))
-# QSC().row(4).stepped().show()#.width(1).fillet(0).build()#.show()
-#cap = QSC().row(3).width(1).length(1).inverted().dishThickness(1.82)#.fillet(0)
-#valid = cap.isValid()
-#valid = QSC().row(4).width(2).isValid()
-#print(valid)
-#cap.show()
+# cap = QSC().row(3).width(16.25).step(3).stepped()#.topFillet(0)
+# c,l = cap.debug()
+# show_object(c)
+# cq.exporters.export(c[0], cap.name()+".step", cq.exporters.ExportTypes.STEP)
+# print(c.findSolid().BoundingBox().xlen)
+def sizes():
+    def bb(cap):
+        return cap.faces("<Z").section().findSolid().BoundingBox()
+        #return cap.findSolid().BoundingBox()
+
+    n = 1
+    w = 2
+    r = 1
+    qsc = QSC().row(r).width(w)
+    c1u = qsc.clone()
+    c2u = qsc.clone().stepped()
+    c3u = qsc.clone().inverted()
+    c1,_ = c1u.build()
+    c2,_ = c2u.build()
+    c3,_ = c3u.build()
+    #c1u._printSettings()
+    #c2u._printSettings()
+    print(
+        bb(c1).xlen,
+        bb(c2).xlen,
+        bb(c3).xlen
+    )
+    print(bb(c1).xlen == bb(c2).xlen,
+          bb(c3).xlen == bb(c2).xlen,
+          bb(c1).xlen == bb(c3).xlen)
+    show_object(c2)
+
+
+#sizes()
+show_object(QSC().row(1).width(2).stepped().build()[0])
