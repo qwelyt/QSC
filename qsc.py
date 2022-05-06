@@ -270,8 +270,8 @@ class QSC:
             return high.translate((-stepWidth/2, 0, 0)).add(step).combine()
         elif self._isoEnter:
             w6 = w / 6
-            lower = self._box(w - w6, l, self._height, self._topDiff, 0, 0, "none")
-            upper = self._box(w, l / 2, self._height, self._topDiff, 0, 0, "none")
+            lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            upper = self._box(w, l / 2, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
         else:
             return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -295,12 +295,12 @@ class QSC:
             return high.translate((-stepWidth/2, 0, 0)).add(step).combine()
         elif self._isoEnter:
             ih = self._height - self._topThickness
-            il2 = self._toMM(1) - self._wallThickness
+            il2 = self._toMM(1) - (self._wallThickness*2)
             w = self._toMM(self._width)
             w6 = w / 6
             iw2 = iw - w6
-            lower = self._box(iw2, il, ih, self._topDiff, 0, 0, "none")
-            upper = self._box(iw, il2, ih, self._topDiff, 0, 0, "none")
+            lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            upper = self._box(iw, il2, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
         else:
             ih = self._height - self._topThickness
@@ -794,4 +794,5 @@ def sizes():
 
 #sizes()
 #show_object(QSC().row(1).width(2).stepped().build()[0])
-QSC().row(4).inverted(True).legend("Z", fontSize=6).show()
+#QSC().row(4).inverted(True).legend("Z", fontSize=6).show()
+QSC().isoEnter().show()
