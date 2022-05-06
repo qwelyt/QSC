@@ -224,9 +224,9 @@ class QSC:
             },
             2: {
                 0: ">>Y[3]",
-                90: "<<X[4]",
-                180: "<<Y[4]",
-                270: ">>X[5]"
+                90: "<<X[2]",
+                180: "<<Y[2]",
+                270: ">>X[3]"
             },
             3: {
                 0: ">>Y[3]",
@@ -795,4 +795,6 @@ def sizes():
 #sizes()
 #show_object(QSC().row(1).width(2).stepped().build()[0])
 #QSC().row(4).inverted(True).legend("Z", fontSize=6).show()
-QSC().isoEnter().show()
+#QSC().isoEnter().inverted().show()
+all_rows_with_legends(1)
+#QSC().row(2).legend("A", fontSize=6).stemRotation(90).show()
