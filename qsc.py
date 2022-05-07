@@ -215,6 +215,8 @@ class QSC:
         return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), self._stemRotation))
 
     def _addLegend(self, cap):
+        if self._legend is None:
+            return cap, None
         sideSelector = {
             1: {
                 0: ">>Y[3]",
@@ -229,7 +231,7 @@ class QSC:
                 270: ">>X[3]"
             },
             3: {
-                0: ">>Y[3]",
+                0: ">>Y[2]",
                 90: "<<X[2]",
                 180: "<<Y[2]",
                 270: ">>X[3]"
@@ -241,9 +243,7 @@ class QSC:
                 270: ">>X[3]"
             }
         }.get(self._row).get(self._stemRotation)
-        if self._legend is None:
-            return cap, None
-        # show_object(cap.faces(sideSelector))
+        #show_object(cap.faces(sideSelector))
         nc = (cap.faces(sideSelector)
               .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
               )
@@ -306,23 +306,23 @@ class QSC:
             ih = self._height - self._topThickness
             return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
 
-    def _createDish(self):
+    def _createDish(self, inverted):
         if self._homingType == HomingType.SCOOPED:
-            self._dishThickness = self._dishThickness * 1.1 if self._inverted else self._dishThickness * 1.5
+            self._dishThickness = self._dishThickness * 1.1 if inverted else self._dishThickness * 1.5
         isoOrNot = self._toMM(2) if self._isoEnter else self._toMM(self._width)
         w = isoOrNot - self._topDiff * -1 / 1.2
         l = self._toMM(self._length) - self._topDiff * -1 / 1.2
         dd = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
         row_adjustments = {
             # (extra DD, extraDDinverted, translateY, translateZ, rotation)
-            1: (2.0, 2.0, 0.0, -1.0, 15.0),
-            2: (2, 1.9, -1.2, -1, 7.0),
+            1: (2.0, 2.0, 0.0, -self._dishThickness, 15.0),
+            2: (2, 1.9, -1.2, -0.3, 5.0),
             3: (0.0, 0.0, 0.0, -0.1, 0.0),
-            4: (0.0, 1.55, 1.2, -1.0, -10.0),
+            4: (0.4, 1.55, 1.2, -1.0, -10.0),
             5: (0.0, 0.0, 0.0, 0.0, 0.0),
         }.get(self._row)
         dd = dd + row_adjustments[0]
-        dd = dd + row_adjustments[1] if self._inverted else dd
+        dd = dd + row_adjustments[1] if inverted else dd
         s_x, s_y, s_z = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness, 1.0
         scale_matrix = cq.Matrix(
             [
@@ -336,8 +336,11 @@ class QSC:
                          .makeSphere(self._dishThickness, angleDegrees1=-90)
                          .transformGeometry(scale_matrix)
                          )
-        if self._inverted:
-            return scaled_sphere
+        if inverted:
+            return (cq.Workplane("XY").add(scaled_sphere)
+            .translate((0, row_adjustments[2], row_adjustments[3]))
+            .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
+                    )
 
         b = cq.Solid.makeCylinder(self._dishThickness, dd).transformGeometry(scale_matrix)
         return (cq.Workplane()
@@ -348,24 +351,25 @@ class QSC:
                 )
 
     def _dish(self, cap):
-        dish = self._createDish()
+        dish = self._createDish(self._inverted)
         capBB = cap.findSolid().BoundingBox()
         h = capBB.zmax
         if self._inverted:
-            i = cap.intersect(dish.translate((0, 0, h - self._dishThickness - 0.02)))
+            intersection = cap.intersect(dish.translate((0, 0, h - self._dishThickness - 0.02)))
+            non_inverted_dish = self._createDish(False)
             if self._debug:
                 pass
                 # show_object(i, options={"color": (0, 0, 0)})
                 # show_object(dish.translate((0, 0, h - self._dishThickness)), options={"color": (255, 255, 255), "alpha": 0.7})
                 # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2))
                 # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness))
-            cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness * 2, "cut")
-            cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness, "cut")
+            cap = cap.cut(non_inverted_dish.translate((0, 0, h)))
+            #debug(intersection)
             if self._debug:
                 pass
                 # show_object(cap.translate((0,30,0)))
                 # show_object(i.translate((0,50,0)))
-            cap = cap.union(i)
+            cap = cap.union(intersection)
         else:
             cap = cap.cut(dish.translate((0, 0, h)))
             if self._debug:
@@ -507,10 +511,10 @@ class QSC:
     def row(self, row: int):
         self._row = row
         row_adjustments = {
-            1: (4, 2),
-            2: (1, 0.5),
+            1: (6, 2),
+            2: (1.5, 0.5),
             3: (0, 0),
-            4: (1, 1),
+            4: (2, 1),
             5: (2, 0),
         }.get(self._row)
         self.height(self._height + row_adjustments[0])
@@ -722,7 +726,7 @@ def showcase():
 
 def all_rows():
     for i in [1, 2, 3, 4]:
-        c = QSC().row(i).width(2).legend(str(i), fontSize=6)
+        c = QSC().row(i).stepped().width(1.75).legend(str(i), fontSize=6)
         h = c._height
         show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
 
@@ -760,41 +764,11 @@ def test_fillet():
 # showcase()
 # Build your own cap here
 # cap = QSC().row(3).width(16.25).step(3).stepped()#.topFillet(0)
-# c,l = cap.debug()
+# c,l = cap.build()
 # show_object(c)
-# cq.exporters.export(c[0], cap.name()+".step", cq.exporters.ExportTypes.STEP)
-# print(c.findSolid().BoundingBox().xlen)
-def sizes():
-    def bb(cap):
-        return cap.faces("<Z").section().findSolid().BoundingBox()
-        #return cap.findSolid().BoundingBox()
-
-    n = 1
-    w = 2
-    r = 1
-    qsc = QSC().row(r).width(w)
-    c1u = qsc.clone()
-    c2u = qsc.clone().stepped()
-    c3u = qsc.clone().inverted()
-    c1,_ = c1u.build()
-    c2,_ = c2u.build()
-    c3,_ = c3u.build()
-    #c1u._printSettings()
-    #c2u._printSettings()
-    print(
-        bb(c1).xlen,
-        bb(c2).xlen,
-        bb(c3).xlen
-    )
-    print(bb(c1).xlen == bb(c2).xlen,
-          bb(c3).xlen == bb(c2).xlen,
-          bb(c1).xlen == bb(c3).xlen)
-    show_object(c2)
 
 
-#sizes()
-#show_object(QSC().row(1).width(2).stepped().build()[0])
-#QSC().row(4).inverted(True).legend("Z", fontSize=6).show()
 #QSC().isoEnter().inverted().show()
-all_rows_with_legends(1)
-#QSC().row(2).legend("A", fontSize=6).stemRotation(90).show()
+#show_object(QSC().stepped().legend("A",6).build()[0])
+#all_rows_with_legends(1)
+#all_rows()
