@@ -89,6 +89,12 @@ class QSC:
     _bottomFillet = 0.6
     _topFillet = 0.6
     _step = 10
+    _rowAngle = {
+        1: 15,
+        2: 5,
+        3: 0,
+        4: -10
+    }
 
     def __init__(self):
         pass
@@ -167,7 +173,7 @@ class QSC:
         s = self._stem().union(self._buildStemSupport(cap)) if self._stemSupport else self._stem()
         w.add(s.translate(self._stemOffset))
         ##old_edges = cap.edges().objects
-        #added = (cap.faces("<Z")
+        # added = (cap.faces("<Z")
         #         .sketch()
         #         #.push([(12,0)])
         #         .circle(self._stemCherryDiameter/2)
@@ -176,7 +182,7 @@ class QSC:
         #         .finalize()
         #         .extrude(until="next")
         #         )
-        #p = (cq.Workplane()
+        # p = (cq.Workplane()
         #     .box(20, 20, 20)
         #     .faces(">Z")
         #     .shell(2)
@@ -188,17 +194,16 @@ class QSC:
         #     .extrude(until="next")
         #     )
         ##show_object(added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1))))
-        #added = (added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1)))
+        # added = (added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1)))
         #         .chamfer(0.24)
         #         )
-        #show_object(added)
-        #show_object(p.faces("<Z").workplane().faces(cq.selectors.RadiusNthSelector(1)))
-        #new_edges = added.edges().objects
-        #added = added.newObject(list(set(new_edges)-set(old_edges)))
-        #show_object(added.edges("<Z").chamfer(0.24))
-        #show_object(cap.faces("<Z").sketch().push([(12,0)]).circle(self._stemCherryDiameter/2).finalize().extrude(until="next").last().faces("<Z"))
-        #show_object(w)
-
+        # show_object(added)
+        # show_object(p.faces("<Z").workplane().faces(cq.selectors.RadiusNthSelector(1)))
+        # new_edges = added.edges().objects
+        # added = added.newObject(list(set(new_edges)-set(old_edges)))
+        # show_object(added.edges("<Z").chamfer(0.24))
+        # show_object(cap.faces("<Z").sketch().push([(12,0)]).circle(self._stemCherryDiameter/2).finalize().extrude(until="next").last().faces("<Z"))
+        # show_object(w)
 
         if self._specialStabPlacement is not None:
             m = s.translate(self._specialStabPlacement[0])
@@ -231,7 +236,7 @@ class QSC:
                 270: ">>X[3]"
             },
             3: {
-                0: ">>Y[2]",
+                0: ">>Y[3]",
                 90: "<<X[2]",
                 180: "<<Y[2]",
                 270: ">>X[3]"
@@ -243,7 +248,7 @@ class QSC:
                 270: ">>X[3]"
             }
         }.get(self._row).get(self._stemRotation)
-        #show_object(cap.faces(sideSelector))
+        # show_object(cap.faces(sideSelector))
         nc = (cap.faces(sideSelector)
               .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
               )
@@ -256,8 +261,8 @@ class QSC:
         l = self._toMM(self._length)
         w = self._toMM(self._width)
         if self._stepped:
-            stepWidth = (w/100)*Constants.STEP_PERCENTAGE_OF_TOTAL
-            highWidth = w-stepWidth
+            stepWidth = (w / 100) * Constants.STEP_PERCENTAGE_OF_TOTAL
+            highWidth = w - stepWidth
             heightDivider = 2 if not self._row == 1 else 2
             high = self._box(highWidth, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             step = self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -265,9 +270,9 @@ class QSC:
                     .sketch()
                     .rect(w, l)
                     .finalize()
-                    .extrude(-self._height/heightDivider, "cut")
+                    .extrude(-self._height / heightDivider, "cut")
                     )
-            return high.translate((-stepWidth/2, 0, 0)).add(step).combine()
+            return high.translate((-stepWidth / 2, 0, 0)).add(step).combine()
         elif self._isoEnter:
             w6 = w / 6
             lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -280,8 +285,8 @@ class QSC:
         il = self._toMM(self._length) - (self._wallThickness * 2)
         iw = self._toMM(self._width) - (self._wallThickness * 2)
         if self._stepped:
-            stepWidth = (iw/100)*Constants.STEP_PERCENTAGE_OF_TOTAL
-            highWidth = iw-stepWidth
+            stepWidth = (iw / 100) * Constants.STEP_PERCENTAGE_OF_TOTAL
+            highWidth = iw - stepWidth
             heightDivider = 2 if not self._row == 1 else 3
             ihHigh = self._height - self._topThickness
             high = self._box(highWidth, il, ihHigh, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -290,12 +295,12 @@ class QSC:
                     .sketch()
                     .rect(iw, il)
                     .finalize()
-                    .extrude(-self._height/heightDivider, "cut")
+                    .extrude(-self._height / heightDivider, "cut")
                     )
-            return high.translate((-stepWidth/2, 0, 0)).add(step).combine()
+            return high.translate((-stepWidth / 2, 0, 0)).add(step).combine()
         elif self._isoEnter:
             ih = self._height - self._topThickness
-            il2 = self._toMM(1) - (self._wallThickness*2)
+            il2 = self._toMM(1) - (self._wallThickness * 2)
             w = self._toMM(self._width)
             w6 = w / 6
             iw2 = iw - w6
@@ -315,11 +320,10 @@ class QSC:
         dd = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
         row_adjustments = {
             # (extra DD, extraDDinverted, translateY, translateZ, rotation)
-            1: (2.0, 2.0, 0.0, -self._dishThickness, 15.0),
-            2: (2, 1.9, -1.2, -0.3, 5.0),
-            3: (0.0, 0.0, 0.0, -0.1, 0.0),
-            4: (0.4, 1.55, 1.2, -1.0, -10.0),
-            5: (0.0, 0.0, 0.0, 0.0, 0.0),
+            1: (2.0, 2.0,  0.0,  -self._dishThickness, self._rowAngle.get(1)),
+            2: (2.0, 2.0,  -1.2, -0.5, self._rowAngle.get(2)),
+            3: (0.0, 0.0,  0.0,  -0.1, self._rowAngle.get(3)),
+            4: (0.4, 1.55, 1.2,  -1.0, self._rowAngle.get(4)),
         }.get(self._row)
         dd = dd + row_adjustments[0]
         dd = dd + row_adjustments[1] if inverted else dd
@@ -338,8 +342,8 @@ class QSC:
                          )
         if inverted:
             return (cq.Workplane("XY").add(scaled_sphere)
-            .translate((0, row_adjustments[2], row_adjustments[3]))
-            .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
+                    .translate((0, row_adjustments[2], row_adjustments[3]))
+                    .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
                     )
 
         b = cq.Solid.makeCylinder(self._dishThickness, dd).transformGeometry(scale_matrix)
@@ -355,7 +359,7 @@ class QSC:
         capBB = cap.findSolid().BoundingBox()
         h = capBB.zmax
         if self._inverted:
-            intersection = cap.intersect(dish.translate((0, 0, h - self._dishThickness - 0.02)))
+            intersection = cap.intersect(dish.translate((0, 0, h - self._dishThickness-0.1)))
             non_inverted_dish = self._createDish(False)
             if self._debug:
                 pass
@@ -363,8 +367,32 @@ class QSC:
                 # show_object(dish.translate((0, 0, h - self._dishThickness)), options={"color": (255, 255, 255), "alpha": 0.7})
                 # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2))
                 # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness))
-            cap = cap.cut(non_inverted_dish.translate((0, 0, h)))
+            # debug(dish.translate((0, 0, h - self._dishThickness - 0.02)))
+            # debug(cap)
+            # print(dish.findSolid().BoundingBox().zmax)
+            # debug(dish)
+            # cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness*2, "cut")
+            # cap = cap.cut(non_inverted_dish.translate((0, 0, h)))
+            cutterThickness = {
+                1: self._dishThickness*2,
+                2: self._dishThickness*1.5,
+                3: self._dishThickness*1,
+                4: self._dishThickness*1.5,
+            }
+            cutter = (cq.Workplane("XY")
+                      .sketch()
+                      .rect(capBB.xlen+1, capBB.ylen+1)
+                      .finalize()
+                      .extrude(cutterThickness.get(self._row), both=True)
+                      .rotate((0,0,0), (1,0,0), self._rowAngle.get(self._row))
+                      .translate((0,0,h))
+                      )
+            #debug(cutter)
+            #debug(cap)
             #debug(intersection)
+            cap = cap.cut(cutter)
+            # debug(intersection)
+            # debug(cap)
             if self._debug:
                 pass
                 # show_object(cap.translate((0,30,0)))
@@ -726,7 +754,7 @@ def showcase():
 
 def all_rows():
     for i in [1, 2, 3, 4]:
-        c = QSC().row(i).stepped().width(1.75).legend(str(i), fontSize=6)
+        c = QSC().row(i).width(1).legend(str(i), fontSize=6)
         h = c._height
         show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
 
@@ -768,7 +796,7 @@ def test_fillet():
 # show_object(c)
 
 
-#QSC().isoEnter().inverted().show()
-#show_object(QSC().stepped().legend("A",6).build()[0])
-#all_rows_with_legends(1)
+# QSC().isoEnter().inverted().show()
+# show_object(QSC().stepped().legend("A",6).build()[0])
+# all_rows_with_legends(1)
 #all_rows()
