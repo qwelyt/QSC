@@ -312,22 +312,21 @@ class QSC:
             return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
 
     def _createDish(self, inverted):
-        if self._homingType == HomingType.SCOOPED:
-            self._dishThickness = self._dishThickness * 1.1 if inverted else self._dishThickness * 1.5
         isoOrNot = self._toMM(2) if self._isoEnter else self._toMM(self._width)
         w = isoOrNot - self._topDiff * -1 / 1.2
         l = self._toMM(self._length) - self._topDiff * -1 / 1.2
-        dd = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
+        dd_orig = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
         row_adjustments = {
             # (extra DD, extraDDinverted, translateY, translateZ, rotation)
-            1: (2.0, 2.0,  0.0,  -self._dishThickness, self._rowAngle.get(1)),
-            2: (2.0, 2.0,  -1.2, -0.5, self._rowAngle.get(2)),
-            3: (0.0, 0.0,  0.0,  -0.1, self._rowAngle.get(3)),
-            4: (0.4, 1.55, 1.2,  -1.0, self._rowAngle.get(4)),
+            1: (2.0, 2.0, 0.0, 0.0, self._rowAngle.get(1)),
+            2: (2.0, 2.0, -1.2, 0.0, self._rowAngle.get(2)),
+            3: (0.0, 0.0, 0.0, 0.0, self._rowAngle.get(3)),
+            4: (0.4, 1.55, 1.2, 0.0, self._rowAngle.get(4)),
         }.get(self._row)
-        dd = dd + row_adjustments[0]
+        dd = dd_orig + row_adjustments[0]
         dd = dd + row_adjustments[1] if inverted else dd
-        s_x, s_y, s_z = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness, 1.0
+        s_x, s_y = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness
+        s_z = 1.5 if self._homingType == HomingType.SCOOPED else 1.0
         scale_matrix = cq.Matrix(
             [
                 [s_x, 0.0, 0.0, 0.0],
@@ -345,12 +344,15 @@ class QSC:
                     .translate((0, row_adjustments[2], row_adjustments[3]))
                     .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
                     )
+        # show_object(scaled_sphere, options={"color":(255,0,0), "alpha":0.5})
+        # show_object(scaled_sphere2, options={"color":(0,255,0), "alpha":0.5})
 
         b = cq.Solid.makeCylinder(self._dishThickness, dd).transformGeometry(scale_matrix)
+        z = -1  # row_adjustments[3]
         return (cq.Workplane()
                 .add(scaled_sphere)
                 .union(b)
-                .translate((0, row_adjustments[2], row_adjustments[3]))
+                .translate((0, row_adjustments[2], z))
                 .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
                 )
 
@@ -358,8 +360,9 @@ class QSC:
         dish = self._createDish(self._inverted)
         capBB = cap.findSolid().BoundingBox()
         h = capBB.zmax
+        # debug(dish.translate((0,0,h)))
         if self._inverted:
-            intersection = cap.intersect(dish.translate((0, 0, h - self._dishThickness-0.1)))
+            intersection = cap.intersect(dish.translate((0, 0, h - self._dishThickness - 0.1)))
             non_inverted_dish = self._createDish(False)
             if self._debug:
                 pass
@@ -374,22 +377,22 @@ class QSC:
             # cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness*2, "cut")
             # cap = cap.cut(non_inverted_dish.translate((0, 0, h)))
             cutterThickness = {
-                1: self._dishThickness*2,
-                2: self._dishThickness*1.5,
-                3: self._dishThickness*1,
-                4: self._dishThickness*1.5,
+                1: self._dishThickness * 2,
+                2: self._dishThickness * 1.5,
+                3: self._dishThickness * 1,
+                4: self._dishThickness * 1.5,
             }
             cutter = (cq.Workplane("XY")
                       .sketch()
-                      .rect(capBB.xlen+1, capBB.ylen+1)
+                      .rect(capBB.xlen + 1, capBB.ylen + 1)
                       .finalize()
                       .extrude(cutterThickness.get(self._row), both=True)
-                      .rotate((0,0,0), (1,0,0), self._rowAngle.get(self._row))
-                      .translate((0,0,h))
+                      .rotate((0, 0, 0), (1, 0, 0), self._rowAngle.get(self._row))
+                      .translate((0, 0, h))
                       )
-            #debug(cutter)
-            #debug(cap)
-            #debug(intersection)
+            # debug(cutter)
+            # debug(cap)
+            # debug(intersection)
             cap = cap.cut(cutter)
             # debug(intersection)
             # debug(cap)
@@ -399,6 +402,7 @@ class QSC:
                 # show_object(i.translate((0,50,0)))
             cap = cap.union(intersection)
         else:
+            # debug(dish)
             cap = cap.cut(dish.translate((0, 0, h)))
             if self._debug:
                 show_object(dish.translate((0, 0, h)), options={"color": (255, 255, 255), "alpha": 0.3})
@@ -501,6 +505,14 @@ class QSC:
 
     def homing(self, type: HomingType = HomingType.SCOOPED):
         self._homingType = type
+        if type == HomingType.SCOOPED:
+            height_adjustment = {
+                1: 0.6035380213915218,
+                2: 0.3804040372053077,
+                3: 0.2755496042382024,
+                4: 0.0490026944352374
+            }.get(self._row)
+            self._height += height_adjustment
         return self
 
     def inverted(self, inverted: bool = True):
@@ -661,7 +673,12 @@ class QSC:
 
         return cap
 
+    def _pre_checks(self):
+        if self._homingType == HomingType.SCOOPED:
+            self._topThickness += 1
+
     def build(self):
+        self._pre_checks()
         cap = self._base().tag("base")
         cap = self._dish(cap) if self._step > 1 else cap
         cap = self._fillet(cap) if self._step > 2 else cap
@@ -746,15 +763,15 @@ def showcase():
     print("6.25 inverted")
     showcase.add(c.clone().width(2.75).build()[0].translate((0, 30 + 20, 0)))
     print("2.75")
-    if "show_object" in locals():
+    if c._show_object_exists():
         show_object(showcase)
-    showcase.save(showcase.name + ".step", "STEP")
-    cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
+    # showcase.save(showcase.name + ".step", "STEP")
+    # cq.exporters.export(showcase.toCompound(), showcase.name + ".stl")
 
 
 def all_rows():
     for i in [1, 2, 3, 4]:
-        c = QSC().row(i).width(1).legend(str(i), fontSize=6)
+        c = QSC().row(i).width(7).homing().legend(str(i), fontSize=6).step(3)
         h = c._height
         show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
 
@@ -796,7 +813,32 @@ def test_fillet():
 # show_object(c)
 
 
-# QSC().isoEnter().inverted().show()
+# show_object(QSC().homing().build()[0])
+# show_object(QSC().build()[0].translate((20,0,0)))
 # show_object(QSC().stepped().legend("A",6).build()[0])
 # all_rows_with_legends(1)
+# all_rows()
+def scooped_or_no():
+    for i in [1, 2, 3, 4]:
+        c = QSC().row(i).width(1).legend(str(i), fontSize=6).step(2)
+        b = QSC().row(i).width(1).homing().legend(str(i) + "h", fontSize=6).step(2)
+        h = c._height
+        k = b._height
+        cc = c.build()[0]
+        bb = b.build()[0]
+        ccz = cc.findSolid().BoundingBox().zlen
+        bbz = bb.findSolid().BoundingBox().zlen
+        print(
+            ccz,
+            bbz,
+            ccz - bbz,
+        )
+        show_object(cc.translate((0, -(i - 1) * 19, h / 2)))
+        show_object(bb.translate((20, -(i - 1) * 19, k / 2)))
+
+
+# build_ = QSC().row(1).homing().step(2).build()[0]
+# show_object(build_)
+#scooped_or_no()
+#all_rows_with_legends(2)
 #all_rows()
