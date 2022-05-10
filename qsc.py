@@ -362,20 +362,14 @@ class QSC:
         h = capBB.zmax
         # debug(dish.translate((0,0,h)))
         if self._inverted:
-            intersection = cap.intersect(dish.translate((0, 0, h - self._dishThickness - 0.1)))
-            non_inverted_dish = self._createDish(False)
+            dishBB = dish.findSolid().BoundingBox()
+            intersection = cap.intersect(dish.translate((0, 0, h - dishBB.zlen/2)))
             if self._debug:
                 pass
                 # show_object(i, options={"color": (0, 0, 0)})
                 # show_object(dish.translate((0, 0, h - self._dishThickness)), options={"color": (255, 255, 255), "alpha": 0.7})
                 # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2))
                 # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness))
-            # debug(dish.translate((0, 0, h - self._dishThickness - 0.02)))
-            # debug(cap)
-            # print(dish.findSolid().BoundingBox().zmax)
-            # debug(dish)
-            # cap = cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness*2, "cut")
-            # cap = cap.cut(non_inverted_dish.translate((0, 0, h)))
             cutterThickness = {
                 1: self._dishThickness * 2,
                 2: self._dishThickness * 1.5,
@@ -390,12 +384,8 @@ class QSC:
                       .rotate((0, 0, 0), (1, 0, 0), self._rowAngle.get(self._row))
                       .translate((0, 0, h))
                       )
-            # debug(cutter)
-            # debug(cap)
-            # debug(intersection)
             cap = cap.cut(cutter)
-            # debug(intersection)
-            # debug(cap)
+            #debug(cap)
             if self._debug:
                 pass
                 # show_object(cap.translate((0,30,0)))
@@ -411,24 +401,34 @@ class QSC:
 
     def _homing(self, cap):
         capBB = cap.findSolid().BoundingBox()
+        l = capBB.ylen/2 if self._homingType == HomingType.BAR else 1
+        placer = cq.Workplane().rect(0.1, l).extrude(capBB.zlen)
+        intersection = cap.intersect(placer)
+        iBB = intersection.faces("<Y").val().BoundingBox()
+
         if self._homingType == HomingType.SCOOPED:
             return cap  # Handled in dish creation
         elif self._homingType == HomingType.BAR:
             barSize = 1
-            return cap.add(cq.Workplane()
-                           .sketch()
-                           .rect(capBB.xlen / 3, barSize)
-                           .finalize()
-                           .extrude(1)
-                           .fillet(barSize / 2.5)
-                           .translate((0, capBB.ylen / 2 + self._topDiff / 1.5, capBB.zlen - self._dishThickness))
-                           )
+            bar = (cq.Workplane("XY")
+                   .sketch()
+                   .rect(capBB.xlen/3, barSize)
+                   .vertices()
+                   .fillet(barSize/2)
+                   .finalize()
+                   .extrude(1)
+                   .faces(">Z")
+                   .fillet(barSize/2)
+                   )
+            b = bar.translate((0,iBB.ymin, iBB.zlen - barSize/1.5))
+            return cap.add(b)
         elif self._homingType == HomingType.DOT:
-            dotSize = 2
-            return cap.add(cq.Workplane()
-                           .sphere(dotSize)
-                           .translate((0, 0, capBB.zlen - dotSize))
-                           )
+            dotSize = 1
+            dot = (cq.Workplane()
+                   .sphere(dotSize)
+                   .translate((0,iBB.ymin,iBB.zlen - dotSize/2))
+                   )
+            return cap.union(dot)
         else:
             return cap
 
@@ -551,11 +551,10 @@ class QSC:
     def row(self, row: int):
         self._row = row
         row_adjustments = {
-            1: (6, 2),
+            1: (5, 3),
             2: (1.5, 0.5),
             3: (0, 0),
             4: (2, 1),
-            5: (2, 0),
         }.get(self._row)
         self.height(self._height + row_adjustments[0])
         self.topThickness(self._topThickness + row_adjustments[1])
@@ -587,6 +586,7 @@ class QSC:
                 .topFillet(self._topFillet)
                 .bottomRectFillet(self._bottomRectFillet)
                 .bottomFillet(self._bottomFillet)
+                .step(self._step)
                 )
 
     def _edges(self, e):
@@ -693,7 +693,7 @@ class QSC:
                 legend.translate((0, 0, -self._height / 2)) if legend is not None else None
             )
         return (
-            cap.translate((0, 0, -self._height / 2)),
+            cap,#.translate((0, 0, -self._height / 2)),
             None
         )
 
@@ -771,8 +771,8 @@ def showcase():
 
 def all_rows():
     for i in [1, 2, 3, 4]:
-        c = QSC().row(i).width(7).homing().legend(str(i), fontSize=6).step(3)
-        h = c._height
+        c = QSC().row(i).width(7).inverted().step(9).homing(HomingType.BAR)#.legend(str(i), fontSize=6)
+        h = 1#c._height
         show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
 
 
@@ -836,9 +836,43 @@ def scooped_or_no():
         show_object(cc.translate((0, -(i - 1) * 19, h / 2)))
         show_object(bb.translate((20, -(i - 1) * 19, k / 2)))
 
+def test_all_types_same_width():
+    print()
+    def bb(cap):
+        return cap.findSolid().BoundingBox()
+    for row in [1]:#,2,3,4]:
+        for width in [1]:#,2,3,6.25,7]:
+            qsc = QSC().row(row).width(width).step(3)
+            normal,_ = qsc.build()
+            stepped,_ = qsc.clone().stepped().build()
+            inverted,_ = qsc.clone().inverted().build()
+
+            nBB = bb(normal)
+            sBB = bb(stepped)
+            iBB = bb(inverted)
+
+            print(nBB.xlen, sBB.xlen, "r"+str(row)+" w"+str(width)+" n vs s X", nBB.xlen == sBB.xlen)
+            print(nBB.xlen, iBB.xlen, "r"+str(row)+" w"+str(width)+" n vs i X", nBB.xlen == iBB.xlen)
+            print(sBB.xlen, iBB.xlen, "r"+str(row)+" w"+str(width)+" s vs i X", sBB.xlen == iBB.xlen)
+
+            print(nBB.ylen, sBB.ylen, "r"+str(row)+" w"+str(width)+" n vs s Y", nBB.ylen == sBB.ylen)
+            print(nBB.ylen, iBB.ylen, "r"+str(row)+" w"+str(width)+" n vs i Y", nBB.ylen == iBB.ylen)
+            print(sBB.ylen, iBB.ylen, "r"+str(row)+" w"+str(width)+" s vs i y", sBB.ylen == iBB.ylen)
+
+# qsc = QSC().row(1).width(1)
+# n,_ = qsc.build()
+# i,_ = qsc.inverted().build()
+# s,_ = qsc.stepped().build()
+#
+# show_object(n)
+# show_object(i.translate((20,0,0)))
+# show_object(s.translate((-20,0,0)))
+test_all_types_same_width()
 
 # build_ = QSC().row(1).homing().step(2).build()[0]
 # show_object(build_)
 #scooped_or_no()
 #all_rows_with_legends(2)
 #all_rows()
+#s = QSC().row(3).isoEnter().build()[0].mirror(mirrorPlane="XY")
+#show_object(s)
