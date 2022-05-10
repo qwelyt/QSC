@@ -61,13 +61,15 @@ class QSCTest(unittest.TestCase):
                 sBB = bb(stepped)
                 iBB = bb(inverted)
 
-                self.assertEqual(nBB.xlen, sBB.xlen, "r"+str(row)+" w"+str(width))
-                self.assertEqual(nBB.xlen, iBB.xlen, "r"+str(row)+" w"+str(width))
-                self.assertEqual(sBB.xlen, iBB.xlen, "r"+str(row)+" w"+str(width))
+                delta = 0.05
 
-                self.assertEqual(nBB.ylen, sBB.ylen, "r"+str(row)+" w"+str(width))
-                self.assertEqual(nBB.ylen, iBB.ylen, "r"+str(row)+" w"+str(width))
-                self.assertEqual(sBB.ylen, iBB.ylen, "r"+str(row)+" w"+str(width))
+                self.assertAlmostEqual(nBB.xlen, sBB.xlen, None, "r"+str(row)+" w"+str(width), delta)
+                self.assertAlmostEqual(nBB.xlen, iBB.xlen, None, "r"+str(row)+" w"+str(width), delta)
+                self.assertAlmostEqual(sBB.xlen, iBB.xlen, None, "r"+str(row)+" w"+str(width), delta)
+
+                self.assertAlmostEqual(nBB.ylen, sBB.ylen, None, "r"+str(row)+" w"+str(width), delta)
+                self.assertAlmostEqual(nBB.ylen, iBB.ylen, None, "r"+str(row)+" w"+str(width), delta)
+                self.assertAlmostEqual(sBB.ylen, iBB.ylen, None, "r"+str(row)+" w"+str(width), delta)
 
     def _can_build_row(self, row, width):
         qsc = QSC().row(row).width(width)
