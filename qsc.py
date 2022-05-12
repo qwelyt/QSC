@@ -39,7 +39,6 @@ cq.Shape.maxFillet = _maxFillet
 
 # TODO
 # * Alps?
-# * Legends
 
 class HomingType(Enum):
     BAR = 1
@@ -50,10 +49,14 @@ class HomingType(Enum):
 class StemType(Enum):
     CHERRY = auto()
 
+class StepType(Enum):
+    LEFT = auto()
+    CENTER = auto()
+    RIGHT = auto()
 
 class Constants():
-    STEP_PERCENTAGE = 0.7142857142857143
-    STEP_PERCENTAGE_OF_TOTAL = 28.57142857142857
+    STEP_PERCENTAGE = 0.7142857142857143 # 1.25/1.75
+    STEP_PERCENTAGE_OF_TOTAL = 28.57142857142857 # 0.5/1.75
     U_IN_MM = 19.05
 
 
@@ -260,7 +263,17 @@ class QSC:
     def _base(self):
         l = self._toMM(self._length)
         w = self._toMM(self._width)
-        if self._stepped:
+        if self._isoEnter and self._stepped:
+            w6 = w / 6
+            lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            upper = self._box(w, l / 2, self._height/2, self._topDiff/2, self._bottomRectFillet, self._topRectFillet, "fillet")
+            return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
+        elif self._isoEnter:
+            w6 = w / 6
+            lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            upper = self._box(w, l / 2, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
+        elif self._stepped:
             stepWidth = (w / 100) * Constants.STEP_PERCENTAGE_OF_TOTAL
             highWidth = w - stepWidth
             heightDivider = 2 if not self._row == 1 else 2
@@ -273,18 +286,22 @@ class QSC:
                     .extrude(-self._height / heightDivider, "cut")
                     )
             return high.translate((-stepWidth / 2, 0, 0)).add(step).combine()
-        elif self._isoEnter:
-            w6 = w / 6
-            lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(w, l / 2, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
         else:
             return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
 
     def _hollow(self):
         il = self._toMM(self._length) - (self._wallThickness * 2)
         iw = self._toMM(self._width) - (self._wallThickness * 2)
-        if self._stepped:
+        if self._isoEnter and self._stepped:
+            ih = self._height - self._topThickness
+            il2 = self._toMM(1) - (self._wallThickness * 2)
+            w = self._toMM(self._width)
+            w6 = w / 6
+            iw2 = iw - w6
+            lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+            upper = self._box(iw, il2, ih/2, self._topDiff/2, self._bottomRectFillet, self._topRectFillet, "fillet")
+            return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
+        elif self._stepped:
             stepWidth = (iw / 100) * Constants.STEP_PERCENTAGE_OF_TOTAL
             highWidth = iw - stepWidth
             heightDivider = 2 if not self._row == 1 else 3
@@ -522,16 +539,19 @@ class QSC:
 
     def stepped(self, steppedKey: bool = True):
         self._stepped = steppedKey
-        lowerWidth = self._width * Constants.STEP_PERCENTAGE
-        offset = (Constants.U_IN_MM * (self._width - lowerWidth) / 2.0)
-        return self.stemOffset((-offset, 0.0, 0.0))
+        if self._isoEnter:
+            return self
+        else:
+            lowerWidth = self._width * Constants.STEP_PERCENTAGE
+            offset = (Constants.U_IN_MM * (self._width - lowerWidth) / 2.0)
+            return self.stemOffset((-offset, 0.0, 0.0))
 
     def isoEnter(self, iso: bool = True):
         self._isoEnter = iso
         self.width(1.5)
         self.length(2)
         self.stemRotation(90)
-        return self
+        return self.stemOffset((0,0,0))
 
     def topRectFillet(self, value: float):
         self._topRectFillet = value
@@ -880,5 +900,5 @@ def test_all_types_same_width():
 #scooped_or_no()
 #all_rows_with_legends(2)
 #all_rows()
-#s = QSC().row(3).isoEnter().build()[0].mirror(mirrorPlane="XY")
-#show_object(s)
+s = QSC().row(3).stepped().isoEnter().step(9).build()[0]
+show_object(s)
