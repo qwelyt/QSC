@@ -29,10 +29,10 @@ class QSCTest(unittest.TestCase):
 
         def test(self):
             for w in [1, 1.25, 1.5, 1.75, 2, 2.25, 2.75, 6.25, 7]:
-                self._test_r1(w)
-                self._test_r2(w)
-                self._test_r3(w)
-                self._test_r4(w)
+                self._test_r1(U(w))
+                self._test_r2(U(w))
+                self._test_r3(U(w))
+                self._test_r4(U(w))
 
     def test_normal(self):
         self.Rows(self._can_build_row)
@@ -52,7 +52,7 @@ class QSCTest(unittest.TestCase):
             return cap.findSolid().BoundingBox()
         for row in [1,2,3,4]:
             for width in [1,2,3,6.25,7]:
-                qsc = QSC().row(row).width(width)
+                qsc = QSC().row(row).width(U(width))
                 normal,_ = qsc.build()
                 stepped,_ = qsc.clone().stepped().build()
                 inverted,_ = qsc.clone().inverted().build()

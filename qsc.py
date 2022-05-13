@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from enum import Enum, auto
 from typing import Tuple, Iterable
 
@@ -49,29 +51,72 @@ class HomingType(Enum):
 class StemType(Enum):
     CHERRY = auto()
 
+
 class StepType(Enum):
     LEFT = auto()
     CENTER = auto()
     RIGHT = auto()
 
-class Constants():
-    STEP_PERCENTAGE = 0.7142857142857143 # 1.25/1.75
-    STEP_PERCENTAGE_OF_TOTAL = 28.57142857142857 # 0.5/1.75
+
+class Percentage(object):
+    _percentage = 0
+
+    def __init__(self, percentage):
+        self._percentage = percentage
+
+    def apply(self, mm):
+        return mm * self._percentage
+
+
+class Constants:
+    STEP_PERCENTAGE = Percentage(0.7142857142857143)  # 1.25/1.75
+    STEP_PERCENTAGE_OF_TOTAL = Percentage(28.57142857142857)  # 0.5/1.75
     U_IN_MM = 19.05
+
+
+class U(object):
+    _u = 0
+
+    def __init__(self, u):
+        self._u = u
+
+    def u(self) -> U:
+        return self
+
+    def mm(self) -> MM:
+        return MM(self._u * Constants.U_IN_MM)
+
+    def get(self) -> float:
+        return self._u
+
+
+class MM(object):
+    _mm = 0
+
+    def __init__(self, mm):
+        self._mm = mm
+
+    def u(self) -> U:
+        return U(self._mm / Constants.U_IN_MM)
+
+    def mm(self) -> MM:
+        return self
+
+    def get(self) -> float:
+        return self._mm
 
 
 class QSC:
     _debug = False
     _wallThickness = 1.5  # mm
     _topThickness = 3  # mm
-    _width = 1  # u
-    _length = 1  # u
+    _width = U(1)  #
+    _length = U(1)  #
     _height = 8  # mm
     _legend = None
     _fontSize = _height
     _firstLayerHeight = 1.2
     _font = "Arial"
-    _bottomWidth = 1  # u
     _topDiff = -7  # mm
     _dishThickness = 1.8  # mm
     _stemType = StemType.CHERRY
@@ -122,9 +167,6 @@ class QSC:
                 .loft()
                 )
 
-    def _toMM(self, u):
-        return u * Constants.U_IN_MM
-
     def _stem(self):
         stemHeight = self._height - self._topThickness
         if self._stemType == StemType.CHERRY:
@@ -147,13 +189,13 @@ class QSC:
             bottomBB = cap.faces("<Z").findSolid().BoundingBox()
             wORl = bottomBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else bottomBB.xlen
             wORl = wORl - self._bottomFillet * 2
-            wORl = wORl - self._toMM(0.25) if self._isoEnter else wORl
+            wORl = wORl - U(0.25).mm().get() if self._isoEnter else wORl
             w = (wORl - self._wallThickness) / 2 - self._stemCherryDiameter / 2
             h = self._height - self._topThickness - 0.3
 
             topBB = cap.faces("<Z").section(h).findSolid().BoundingBox()
             topLen = topBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else topBB.xlen
-            topLen = topLen - self._toMM(0.25) if self._isoEnter else topLen
+            topLen = topLen - U(0.25).mm().get() if self._isoEnter else topLen
             w2 = (topLen - self._wallThickness) / 2 - self._stemCherryDiameter / 2
             diff = w - w2
 
@@ -172,6 +214,7 @@ class QSC:
 
     def _stemAndSupport(self, cap):
         wORl = self._width if self._stemRotation == 0 or self._stemRotation == 180 else self._length
+        wORl = MM(wORl).u().get()
         w = cq.Workplane("XY")
         s = self._stem().union(self._buildStemSupport(cap)) if self._stemSupport else self._stem()
         w.add(s.translate(self._stemOffset))
@@ -261,12 +304,12 @@ class QSC:
         return c, t
 
     def _base(self):
-        l = self._toMM(self._length)
-        w = self._toMM(self._width)
+        l = self._length
+        w = self._width
         if self._isoEnter and self._stepped:
             w6 = w / 6
             lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(w, l / 2, self._height/2, self._topDiff/2, self._bottomRectFillet, self._topRectFillet, "fillet")
+            upper = self._box(w, l / 2, self._height / 2, self._topDiff / 2, self._bottomRectFillet, self._topRectFillet, "fillet")
             return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
         elif self._isoEnter:
             w6 = w / 6
@@ -274,8 +317,8 @@ class QSC:
             upper = self._box(w, l / 2, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
         elif self._stepped:
-            stepWidth = (w / 100) * Constants.STEP_PERCENTAGE_OF_TOTAL
-            highWidth = w - stepWidth
+            highWidth = Constants.STEP_PERCENTAGE.apply(w)
+            stepWidth = w - highWidth
             heightDivider = 2 if not self._row == 1 else 2
             high = self._box(highWidth, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             step = self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -290,20 +333,20 @@ class QSC:
             return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
 
     def _hollow(self):
-        il = self._toMM(self._length) - (self._wallThickness * 2)
-        iw = self._toMM(self._width) - (self._wallThickness * 2)
+        il = self._length - (self._wallThickness * 2)
+        iw = self._width - (self._wallThickness * 2)
         if self._isoEnter and self._stepped:
             ih = self._height - self._topThickness
-            il2 = self._toMM(1) - (self._wallThickness * 2)
-            w = self._toMM(self._width)
+            il2 = U(1).mm().get() - (self._wallThickness * 2)
+            w = self._width
             w6 = w / 6
             iw2 = iw - w6
             lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(iw, il2, ih/2, self._topDiff/2, self._bottomRectFillet, self._topRectFillet, "fillet")
+            upper = self._box(iw, il2, ih / 2, self._topDiff / 2, self._bottomRectFillet, self._topRectFillet, "fillet")
             return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
         elif self._stepped:
-            stepWidth = (iw / 100) * Constants.STEP_PERCENTAGE_OF_TOTAL
-            highWidth = iw - stepWidth
+            highWidth = Constants.STEP_PERCENTAGE.apply(iw)
+            stepWidth = iw - highWidth
             heightDivider = 2 if not self._row == 1 else 3
             ihHigh = self._height - self._topThickness
             high = self._box(highWidth, il, ihHigh, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -317,8 +360,8 @@ class QSC:
             return high.translate((-stepWidth / 2, 0, 0)).add(step).combine()
         elif self._isoEnter:
             ih = self._height - self._topThickness
-            il2 = self._toMM(1) - (self._wallThickness * 2)
-            w = self._toMM(self._width)
+            il2 = U(1).mm().get() - (self._wallThickness * 2)
+            w = self._width
             w6 = w / 6
             iw2 = iw - w6
             lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -329,9 +372,9 @@ class QSC:
             return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
 
     def _createDish(self, inverted):
-        isoOrNot = self._toMM(2) if self._isoEnter else self._toMM(self._width)
+        isoOrNot = U(2).mm().get() if self._isoEnter else self._width
         w = isoOrNot - self._topDiff * -1 / 1.2
-        l = self._toMM(self._length) - self._topDiff * -1 / 1.2
+        l = self._length - self._topDiff * -1 / 1.2
         dd_orig = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
         row_adjustments = {
             # (extra DD, extraDDinverted, translateY, translateZ, rotation)
@@ -380,7 +423,7 @@ class QSC:
         # debug(dish.translate((0,0,h)))
         if self._inverted:
             dishBB = dish.findSolid().BoundingBox()
-            intersection = cap.intersect(dish.translate((0, 0, h - dishBB.zlen/2)))
+            intersection = cap.intersect(dish.translate((0, 0, h - dishBB.zlen / 2)))
             if self._debug:
                 pass
                 # show_object(i, options={"color": (0, 0, 0)})
@@ -402,7 +445,7 @@ class QSC:
                       .translate((0, 0, h))
                       )
             cap = cap.cut(cutter)
-            #debug(cap)
+            # debug(cap)
             if self._debug:
                 pass
                 # show_object(cap.translate((0,30,0)))
@@ -417,10 +460,10 @@ class QSC:
         return cap
 
     def _homing(self, cap):
-        if self._homingType is None or HomingType.SCOOPED:
+        if self._homingType is None or self._homingType is HomingType.SCOOPED:
             return cap
         capBB = cap.findSolid().BoundingBox()
-        l = capBB.ylen/2 if self._homingType == HomingType.BAR else 1
+        l = capBB.ylen / 2 if self._homingType == HomingType.BAR else 1
         placer = cq.Workplane().rect(0.1, l).extrude(capBB.zlen)
         intersection = cap.intersect(placer)
         iBB = intersection.faces("<Y").val().BoundingBox()
@@ -429,21 +472,21 @@ class QSC:
             barSize = 1
             bar = (cq.Workplane("XY")
                    .sketch()
-                   .rect(capBB.xlen/3, barSize)
+                   .rect(capBB.xlen / 3, barSize)
                    .vertices()
-                   .fillet(barSize/2)
+                   .fillet(barSize / 2)
                    .finalize()
                    .extrude(1)
                    .faces(">Z")
-                   .fillet(barSize/2)
+                   .fillet(barSize / 2)
                    )
-            b = bar.translate((0,iBB.ymin, iBB.zlen - barSize/1.5))
+            b = bar.translate((0, iBB.ymin, iBB.zlen - barSize / 1.5))
             return cap.add(b)
         elif self._homingType == HomingType.DOT:
             dotSize = 1
             dot = (cq.Workplane()
                    .sphere(dotSize)
-                   .translate((0,iBB.ymin,iBB.zlen - dotSize/2))
+                   .translate((0, iBB.ymin, iBB.zlen - dotSize / 2))
                    )
             return cap.union(dot)
         else:
@@ -457,11 +500,11 @@ class QSC:
         self._topThickness = thickness
         return self
 
-    def width(self, width: float):
+    def width(self, width: U | MM):
         self._width = width
         return self
 
-    def length(self, length: float):
+    def length(self, length: U | MM):
         self._length = length
         return self
 
@@ -476,10 +519,6 @@ class QSC:
         self._font = font
         return self
 
-    def bottomWidth(self, width: float):
-        self._bottomWidth = width
-        return self
-
     def topDiff(self, diff: float):
         self._topDiff = diff
         return self
@@ -488,8 +527,8 @@ class QSC:
         self._dishThickness = thickness
         return self
 
-    def stemType(self, type: StemType):
-        self._stemType = type
+    def stemType(self, stemtype: StemType):
+        self._stemType = stemtype
         return self
 
     def stemOffset(self, offset: Tuple[float, float, float]):
@@ -537,21 +576,23 @@ class QSC:
         self._inverted = inverted
         return self
 
-    def stepped(self, steppedKey: bool = True):
+    # def stepped(self, stepType=StepType.LEFT: StepType, stepAmount=Constants.STEP_PERCENTAGE: float):
+    # def stepped(self, stepType=StepType.LEFT: StepType, raisedAmount: Union[Percentage,U] = Contants.STEP_AMOUNT):
+    def stepped(self, steppedKey: bool = True, offset: bool=True):
         self._stepped = steppedKey
         if self._isoEnter:
             return self
         else:
-            lowerWidth = self._width * Constants.STEP_PERCENTAGE
-            offset = (Constants.U_IN_MM * (self._width - lowerWidth) / 2.0)
+            lowerWidth = Constants.STEP_PERCENTAGE.apply(self._width.mm().get())
+            offset = (self._width.mm().get() - lowerWidth) / 2.0
             return self.stemOffset((-offset, 0.0, 0.0))
 
     def isoEnter(self, iso: bool = True):
         self._isoEnter = iso
-        self.width(1.5)
-        self.length(2)
+        self.width(U(1.5))
+        self.length(U(2))
         self.stemRotation(90)
-        return self.stemOffset((0,0,0))
+        return self.stemOffset((0, 0, 0))
 
     def topRectFillet(self, value: float):
         self._topRectFillet = value
@@ -590,12 +631,12 @@ class QSC:
         return (QSC()
                 .bottomFillet(self._bottomFillet)
                 .bottomRectFillet(self._bottomRectFillet)
-                .bottomWidth(self._bottomWidth)
                 .disableStemSupport(not self._stemSupport)
                 .dishThickness(self._dishThickness)
                 .height(self._height)
                 .homing(self._homingType, False)
                 .inverted(self._inverted)
+                .isoEnter(self._isoEnter)
                 .legend(self._legend, self._fontSize, self._firstLayerHeight, self._font)
                 .length(self._length)
                 .row(self._row, False)
@@ -603,6 +644,9 @@ class QSC:
                 .stemHSlop(self._stemHSlop)
                 .stemType(self._stemType)
                 .stemVSlop(self._stemVSlop)
+                .stepped(self._stepped, False)
+                .stemOffset(self._stemOffset)
+                .stemRotation(self._stemRotation)
                 .step(self._step)
                 .topDiff(self._topDiff)
                 .topFillet(self._topFillet)
@@ -631,6 +675,7 @@ class QSC:
         return self.build()
 
     def isValid(self):
+        self._pre_checks()
         base = self._base().tag("base")
         cap = self._dish(base)
         plane_faces = cap.faces("%Plane")
@@ -648,6 +693,7 @@ class QSC:
         return (valid, cap)
 
     def maxPossibleFillet(self):
+        self._pre_checks()
         base = self._base()
         cap = self._dish(base)
         shape = cap.findSolid()
@@ -700,6 +746,9 @@ class QSC:
         if self._homingType == HomingType.SCOOPED:
             self._topThickness += 1
 
+        self._width = self._width.mm().get()
+        self._length = self._length.mm().get()
+
     def build(self):
         self._pre_checks()
         cap = self._base().tag("base")
@@ -716,7 +765,7 @@ class QSC:
                 legend.translate((0, 0, -self._height / 2)) if legend is not None else None
             )
         return (
-            cap,#.translate((0, 0, -self._height / 2)),
+            cap,  # .translate((0, 0, -self._height / 2)),
             None
         )
 
@@ -794,8 +843,8 @@ def showcase():
 
 def all_rows():
     for i in [1, 2, 3, 4]:
-        c = QSC().row(i).width(7).inverted().step(9).homing(HomingType.BAR)#.legend(str(i), fontSize=6)
-        h = 1#c._height
+        c = QSC().row(i).width(7).inverted().step(9).homing(HomingType.BAR)  # .legend(str(i), fontSize=6)
+        h = 1  # c._height
         show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
 
 
@@ -859,31 +908,35 @@ def scooped_or_no():
         show_object(cc.translate((0, -(i - 1) * 19, h / 2)))
         show_object(bb.translate((20, -(i - 1) * 19, k / 2)))
 
+
 def test_all_types_same_width():
     print()
+
     def bb(cap):
         return cap.findSolid().BoundingBox()
-    for row in [3]:#,2,3,4]:
-        for width in [2]:#,2,3,6.25,7]:
+
+    for row in [3]:  # ,2,3,4]:
+        for width in [2]:  # ,2,3,6.25,7]:
             qsc = QSC().row(row).width(width)
-            normal,_ = qsc.build()
-            stepped,_ = qsc.clone().stepped().build()
-            inverted,_ = qsc.clone().inverted().build()
+            normal, _ = qsc.build()
+            stepped, _ = qsc.clone().stepped().build()
+            inverted, _ = qsc.clone().inverted().build()
 
             nBB = bb(normal)
             sBB = bb(stepped)
             iBB = bb(inverted)
 
-            print(nBB.xlen, sBB.xlen, "r"+str(row)+" w"+str(width)+" n vs s X", nBB.xlen == sBB.xlen)
-            print(nBB.xlen, iBB.xlen, "r"+str(row)+" w"+str(width)+" n vs i X", nBB.xlen == iBB.xlen)
-            print(sBB.xlen, iBB.xlen, "r"+str(row)+" w"+str(width)+" s vs i X", sBB.xlen == iBB.xlen)
+            print(nBB.xlen, sBB.xlen, "r" + str(row) + " w" + str(width) + " n vs s X", nBB.xlen == sBB.xlen)
+            print(nBB.xlen, iBB.xlen, "r" + str(row) + " w" + str(width) + " n vs i X", nBB.xlen == iBB.xlen)
+            print(sBB.xlen, iBB.xlen, "r" + str(row) + " w" + str(width) + " s vs i X", sBB.xlen == iBB.xlen)
 
-            print(nBB.ylen, sBB.ylen, "r"+str(row)+" w"+str(width)+" n vs s Y", nBB.ylen == sBB.ylen)
-            print(nBB.ylen, iBB.ylen, "r"+str(row)+" w"+str(width)+" n vs i Y", nBB.ylen == iBB.ylen)
-            print(sBB.ylen, iBB.ylen, "r"+str(row)+" w"+str(width)+" s vs i y", sBB.ylen == iBB.ylen)
+            print(nBB.ylen, sBB.ylen, "r" + str(row) + " w" + str(width) + " n vs s Y", nBB.ylen == sBB.ylen)
+            print(nBB.ylen, iBB.ylen, "r" + str(row) + " w" + str(width) + " n vs i Y", nBB.ylen == iBB.ylen)
+            print(sBB.ylen, iBB.ylen, "r" + str(row) + " w" + str(width) + " s vs i y", sBB.ylen == iBB.ylen)
             show_object(normal)
-            show_object(stepped.translate((20,0,0)))
-            show_object(inverted.translate((-20,0,0)))
+            show_object(stepped.translate((20, 0, 0)))
+            show_object(inverted.translate((-20, 0, 0)))
+
 
 # qsc = QSC().row(1).width(1)
 # n,_ = qsc.build()
@@ -893,12 +946,12 @@ def test_all_types_same_width():
 # show_object(n)
 # show_object(i.translate((20,0,0)))
 # show_object(s.translate((-20,0,0)))
-#test_all_types_same_width()
+# test_all_types_same_width()
 
 # build_ = QSC().row(1).homing().step(2).build()[0]
 # show_object(build_)
-#scooped_or_no()
-#all_rows_with_legends(2)
-#all_rows()
-s = QSC().row(3).stepped().isoEnter().step(9).build()[0]
+# scooped_or_no()
+# all_rows_with_legends(2)
+# all_rows()
+s = QSC().row(1).width(U(7)).inverted().step(9).build()[0]
 show_object(s)
