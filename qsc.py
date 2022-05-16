@@ -64,6 +64,9 @@ class Percentage(object):
     def __init__(self, percentage):
         self._percentage = percentage
 
+    def __str__(self):
+        return str(self._percentage)
+
     def apply(self, mm):
         return mm * self._percentage
 
@@ -79,6 +82,9 @@ class U(object):
 
     def __init__(self, u):
         self._u = u
+        
+    def __str__(self):
+        return str(self._u+"u")
 
     def u(self) -> U:
         return self
@@ -96,6 +102,9 @@ class MM(object):
     def __init__(self, mm):
         self._mm = mm
 
+    def __str__(self):
+        return str(self._mm + "mm")
+
     def u(self) -> U:
         return U(self._mm / Constants.U_IN_MM)
 
@@ -107,42 +116,43 @@ class MM(object):
 
 
 class QSC:
-    _debug = False
-    _wallThickness = 1.5  # mm
-    _topThickness = 3  # mm
-    _width = U(1)  #
-    _length = U(1)  #
-    _height = 8  # mm
-    _legend = None
-    _fontSize = _height
-    _firstLayerHeight = 1.2
-    _font = "Arial"
-    _topDiff = -7  # mm
-    _dishThickness = 1.8  # mm
-    _stemType = StemType.CHERRY
-    _stemOffset = (0, 0, 0)
-    _stemRotation = 0
-    _stemCherryDiameter = 5.6  # mm
-    _stemSupport = True
-    _specialStabPlacement = None
-    _stemVSlop = 0.0  # mm
-    _stemHSlop = 0.0  # mm
-    _inverted = False
-    _homingType = None  # None, Bar, Scooped, Dot
-    _stepped = False
-    _isoEnter = False
-    _row = 3
-    _topRectFillet = 2
-    _bottomRectFillet = 1
     _bottomFillet = 0.6
-    _topFillet = 0.6
-    _step = 10
+    _bottomRectFillet = 1
+    _debug = False
+    _dishThickness = MM(1.8).get()
+    _firstLayerHeight = MM(1.2).get()
+    _height = MM(8).get()
+    _homingType = None  # None, Bar, Scooped, Dot
+    _inverted = False
+    _isoEnter = False
+    _legend = None
+    _length = U(1)
+    _row = 3
     _rowAngle = {
         1: 15,
         2: 5,
         3: 0,
         4: -10
     }
+    _specialStabPlacement = None
+    _stemCherryDiameter = MM(5.6).get()  # mm
+    _stemHSlop = MM(0.0).get()  # mm
+    _stemOffset = (0, 0, 0)
+    _stemRotation = 0
+    _stemSupport = True
+    _stemType = StemType.CHERRY
+    _stemVSlop = MM(0.0).get()  # mm
+    _step = 10
+    _stepped = False
+    _topDiff = MM(-7).get()  # mm
+    _topFillet = 0.6
+    _topRectFillet = 2
+    _topThickness = MM(3).get()  # mm
+    _wallThickness = MM(1.5).get()  # mm
+    _width = U(1)  #
+
+    _font = "Arial"
+    _fontSize = _height
 
     def __init__(self):
         pass
@@ -214,7 +224,7 @@ class QSC:
 
     def _stemAndSupport(self, cap):
         wORl = self._width if self._stemRotation == 0 or self._stemRotation == 180 else self._length
-        wORl = MM(wORl).u().get()
+        wORl = wORl.u().get()
         w = cq.Workplane("XY")
         s = self._stem().union(self._buildStemSupport(cap)) if self._stemSupport else self._stem()
         w.add(s.translate(self._stemOffset))
@@ -304,8 +314,8 @@ class QSC:
         return c, t
 
     def _base(self):
-        l = self._length
-        w = self._width
+        l = self._length.mm().get()
+        w = self._width.mm().get()
         if self._isoEnter and self._stepped:
             w6 = w / 6
             lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -333,12 +343,12 @@ class QSC:
             return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
 
     def _hollow(self):
-        il = self._length - (self._wallThickness * 2)
-        iw = self._width - (self._wallThickness * 2)
+        il = self._length.mm().get() - (self._wallThickness * 2)
+        iw = self._width.mm().get() - (self._wallThickness * 2)
         if self._isoEnter and self._stepped:
             ih = self._height - self._topThickness
             il2 = U(1).mm().get() - (self._wallThickness * 2)
-            w = self._width
+            w = self._width.mm().get()
             w6 = w / 6
             iw2 = iw - w6
             lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -361,7 +371,7 @@ class QSC:
         elif self._isoEnter:
             ih = self._height - self._topThickness
             il2 = U(1).mm().get() - (self._wallThickness * 2)
-            w = self._width
+            w = self._width.mm().get()
             w6 = w / 6
             iw2 = iw - w6
             lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -372,9 +382,9 @@ class QSC:
             return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
 
     def _createDish(self, inverted):
-        isoOrNot = U(2).mm().get() if self._isoEnter else self._width
+        isoOrNot = U(2).mm().get() if self._isoEnter else self._width.mm().get()
         w = isoOrNot - self._topDiff * -1 / 1.2
-        l = self._length - self._topDiff * -1 / 1.2
+        l = self._length.mm().get() - self._topDiff * -1 / 1.2
         dd_orig = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
         row_adjustments = {
             # (extra DD, extraDDinverted, translateY, translateZ, rotation)
@@ -399,58 +409,44 @@ class QSC:
                          .makeSphere(self._dishThickness, angleDegrees1=-90)
                          .transformGeometry(scale_matrix)
                          )
-        if inverted:
-            return (cq.Workplane("XY").add(scaled_sphere)
+        noCylinder = (cq.Workplane("XY").add(scaled_sphere)
                     .translate((0, row_adjustments[2], row_adjustments[3]))
                     .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
                     )
         # show_object(scaled_sphere, options={"color":(255,0,0), "alpha":0.5})
         # show_object(scaled_sphere2, options={"color":(0,255,0), "alpha":0.5})
 
-        b = cq.Solid.makeCylinder(self._dishThickness, dd).transformGeometry(scale_matrix)
+        upOrDown = -1 if inverted else 0
+
+        b = (cq.Solid.makeCylinder(self._dishThickness, dd)
+             .transformGeometry(scale_matrix)
+             .translate((0,0,dd*upOrDown))
+             )
         z = -1  # row_adjustments[3]
-        return (cq.Workplane()
+        return (
+            (cq.Workplane()
                 .add(scaled_sphere)
                 .union(b)
                 .translate((0, row_adjustments[2], z))
                 .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
-                )
+                ),
+            noCylinder
+        )
 
     def _dish(self, cap):
-        dish = self._createDish(self._inverted)
+        dish, just_dish = self._createDish(self._inverted)
         capBB = cap.findSolid().BoundingBox()
         h = capBB.zmax
-        # debug(dish.translate((0,0,h)))
+        #debug(dish.translate((0,0,h)))
+        print(self._inverted)
         if self._inverted:
-            dishBB = dish.findSolid().BoundingBox()
-            intersection = cap.intersect(dish.translate((0, 0, h - dishBB.zlen / 2)))
-            if self._debug:
-                pass
-                # show_object(i, options={"color": (0, 0, 0)})
-                # show_object(dish.translate((0, 0, h - self._dishThickness)), options={"color": (255, 255, 255), "alpha": 0.7})
-                # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(self._dishThickness*2))
-                # show_object(cap.faces(">Z").sketch().rect(capBB.xlen, capBB.ylen).finalize().extrude(-self._dishThickness))
-            cutterThickness = {
-                1: self._dishThickness * 2,
-                2: self._dishThickness * 1.5,
-                3: self._dishThickness * 1,
-                4: self._dishThickness * 1.5,
-            }
-            cutter = (cq.Workplane("XY")
-                      .sketch()
-                      .rect(capBB.xlen + 1, capBB.ylen + 1)
-                      .finalize()
-                      .extrude(cutterThickness.get(self._row), both=True)
-                      .rotate((0, 0, 0), (1, 0, 0), self._rowAngle.get(self._row))
-                      .translate((0, 0, h))
-                      )
+            dishBB = just_dish.findSolid().BoundingBox()
+            intersection = cap.intersect(dish.translate((0, 0, h - dishBB.zlen/2)))
+            #debug(intersection)
+            cutter = cq.Solid.extrudeLinear(intersection.faces(">Z").val(), cq.Vector(0, 0, dishBB.zlen))
+            #debug(cutter)
             cap = cap.cut(cutter)
-            # debug(cap)
-            if self._debug:
-                pass
-                # show_object(cap.translate((0,30,0)))
-                # show_object(i.translate((0,50,0)))
-            cap = cap.union(intersection)
+            #cap = cap.union(intersection)
         else:
             # debug(dish)
             cap = cap.cut(dish.translate((0, 0, h)))
@@ -721,7 +717,7 @@ class QSC:
                 self._printSettings()
                 raise ValueError("Top fillet too big",
                                  "Your top fillet setting [" + str(self._topFillet) + "] is too big for the current shape (r" + str(self._row)
-                                 + ", " + str(self._width) + "x" + str(self._length)
+                                 + ", " + str(self._width.u().get()) + "x" + str(self._length.u().get())
                                  + "). Try reducing it.")
             except Exception:
                 self._printSettings()
@@ -734,7 +730,7 @@ class QSC:
                 self._printSettings()
                 raise ValueError("Bottom fillet too big",
                                  "Your bottom fillet setting [" + str(self._bottomFillet) + "] is too big for the current shape (r" + str(self._row)
-                                 + ", " + str(self._width) + "x" + str(self._length)
+                                 + ", " + str(self._width.u().get()) + "x" + str(self._length)
                                  + "). Try reducing it.")
             except Exception:
                 self._printSettings()
@@ -745,9 +741,6 @@ class QSC:
     def _pre_checks(self):
         if self._homingType == HomingType.SCOOPED:
             self._topThickness += 1
-
-        self._width = self._width.mm().get()
-        self._length = self._length.mm().get()
 
     def build(self):
         self._pre_checks()
@@ -771,7 +764,7 @@ class QSC:
 
     def name(self):
         name = "qsc_row" + str(self._row)
-        name = name + "_isoEnter" if self._isoEnter else name + "_" + str(self._width) + "x" + str(self._length)
+        name = name + "_isoEnter" if self._isoEnter else name + "_" + str(self._width.u().get()) + "x" + str(self._length.u().get())
         name = name + "_i" if self._inverted else name
         name = name + "_stepped" if self._stepped else name
         name = name + "_" + self._legend if self._legend is not None else name
@@ -953,5 +946,6 @@ def test_all_types_same_width():
 # scooped_or_no()
 # all_rows_with_legends(2)
 # all_rows()
-s = QSC().row(1).width(U(7)).inverted().step(9).build()[0]
-show_object(s)
+s = QSC().row(1).width(U(2.25)).inverted().step(2).build()[0]
+#show_object(s)
+#show_object(QSC().row(3)._createDish(True))
