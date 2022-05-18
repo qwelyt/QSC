@@ -2,7 +2,7 @@ import logging
 import sys
 import unittest
 
-from qsc import QSC
+from qsc import QSC, U
 
 
 class QSCTest(unittest.TestCase):
@@ -53,9 +53,11 @@ class QSCTest(unittest.TestCase):
         for row in [1,2,3,4]:
             for width in [1,2,3,6.25,7]:
                 qsc = QSC().row(row).width(U(width))
+                s = qsc.clone().stepped()
+                i = qsc.clone().inverted()
                 normal,_ = qsc.build()
-                stepped,_ = qsc.clone().stepped().build()
-                inverted,_ = qsc.clone().inverted().build()
+                stepped,_ = s.build()
+                inverted,_ = i.build()
 
                 nBB = bb(normal)
                 sBB = bb(stepped)
