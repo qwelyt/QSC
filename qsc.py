@@ -82,9 +82,12 @@ class U(object):
 
     def __init__(self, u):
         self._u = u
-        
+
     def __str__(self):
-        return str(self._u+"u")
+        return str(self._u)+"u"
+
+    def __repr__(self):
+        return f'U(u={self._u})'
 
     def u(self) -> U:
         return self
@@ -104,6 +107,9 @@ class MM(object):
 
     def __str__(self):
         return str(self._mm + "mm")
+
+    def __repr__(self):
+        return f'MM(mm={self._mm})'
 
     def u(self) -> U:
         return U(self._mm / Constants.U_IN_MM)
@@ -388,10 +394,10 @@ class QSC:
         dd_orig = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
         row_adjustments = {
             # (extra DD, extraDDinverted, translateY, translateZ, rotation)
-            1: (2.0, 2.0, 0.0, 0.0, self._rowAngle.get(1)),
-            2: (2.0, 2.0, -1.2, 0.0, self._rowAngle.get(2)),
-            3: (0.0, 0.0, 0.0, 0.0, self._rowAngle.get(3)),
-            4: (0.4, 1.55, 1.2, 0.0, self._rowAngle.get(4)),
+            1: (2.0, 2.0, -1.0, -4.1, self._rowAngle.get(1)),
+            2: (2.0, 2.0, -1.2, -3.1, self._rowAngle.get(2)),
+            3: (0.0, 0.0, 0.0, -1.8, self._rowAngle.get(3)),
+            4: (0.4, 1.55, 1.2, -3.1, self._rowAngle.get(4)),
         }.get(self._row)
         dd = dd_orig + row_adjustments[0]
         dd = dd + row_adjustments[1] if inverted else dd
@@ -409,44 +415,56 @@ class QSC:
                          .makeSphere(self._dishThickness, angleDegrees1=-90)
                          .transformGeometry(scale_matrix)
                          )
-        noCylinder = (cq.Workplane("XY").add(scaled_sphere)
-                    .translate((0, row_adjustments[2], row_adjustments[3]))
-                    .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
-                    )
+
         # show_object(scaled_sphere, options={"color":(255,0,0), "alpha":0.5})
         # show_object(scaled_sphere2, options={"color":(0,255,0), "alpha":0.5})
 
-        upOrDown = -1 if inverted else 0
+        z = row_adjustments[3]
+        if inverted:
+            top = (cq.Workplane().add(scaled_sphere).split(keepTop=True))
+            b = (cq.Solid.extrudeLinear(top.faces("<Z").val(), cq.Vector(0,0,-dd)))
+            return (cq.Workplane("XY")
+                    .add(top)
+                    .union(b)
+                    .translate((0, row_adjustments[2], z))
+                    .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
+                    )
+        else:
+            bottom = (cq.Workplane().add(scaled_sphere).split(keepBottom=True))
+            p = (cq.Solid.extrudeLinear(bottom.faces(">Z").val(), cq.Vector(0,0,dd)))
+            return (cq.Workplane("XY")
+                 .add(bottom)
+                 .union(p)
+                 .translate((0, row_adjustments[2], z))
+                 .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
+                 )
 
-        b = (cq.Solid.makeCylinder(self._dishThickness, dd)
-             .transformGeometry(scale_matrix)
-             .translate((0,0,dd*upOrDown))
-             )
-        z = -1  # row_adjustments[3]
-        return (
-            (cq.Workplane()
-                .add(scaled_sphere)
-                .union(b)
-                .translate((0, row_adjustments[2], z))
-                .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
-                ),
-            noCylinder
-        )
 
     def _dish(self, cap):
-        dish, just_dish = self._createDish(self._inverted)
+        dish = self._createDish(self._inverted)
         capBB = cap.findSolid().BoundingBox()
         h = capBB.zmax
-        #debug(dish.translate((0,0,h)))
-        print(self._inverted)
         if self._inverted:
-            dishBB = just_dish.findSolid().BoundingBox()
-            intersection = cap.intersect(dish.translate((0, 0, h - dishBB.zlen/2)))
-            #debug(intersection)
+            dishBB = dish.findSolid().BoundingBox()
+            intersection = cap.intersect(dish.translate((0, 0, h)))
             cutter = cq.Solid.extrudeLinear(intersection.faces(">Z").val(), cq.Vector(0, 0, dishBB.zlen))
-            #debug(cutter)
-            cap = cap.cut(cutter)
-            #cap = cap.union(intersection)
+            scale_matrix = cq.Matrix(
+                [
+                    [1.1, 0.0, 0.0, 0.0],
+                    [0.0, 1.1, 0.0, 0.0],
+                    [0.0, 0.0, 1.02, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ]
+            )
+            sc = cutter.translate(-cutter.Center()).transformGeometry(scale_matrix).translate(cutter.Center())
+            #show_object(cutter)
+            #debug(sc)
+            #debug(cap)
+            #debug(cq.Workplane().add(cutter).shell(-1))
+            #print(cutter.maxFillet(cutter.Edges(), 0.01, 1000))
+            #cap = cap.cut(cutter)
+            cap = cap.cut(sc)
+            cap = cap.union(intersection)
         else:
             # debug(dish)
             cap = cap.cut(dish.translate((0, 0, h)))
@@ -663,7 +681,7 @@ class QSC:
         edges = self._edges(shape.edges().vals())
         print(edges[0])
         if self._show_object_exists():
-            show_object(edges[0][1], options={"color": {255, 0, 0}})
+            show_object(edges[0][1], options={"color": (255, 0, 250)})
         return edges
 
     def debug(self):
@@ -698,8 +716,10 @@ class QSC:
         return iterfillet
 
     def _fillet(self, cap):
-        # maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.01, 100)
+        #maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.001, 100)
+        #print("hoho", maxTop)
         # maxStep = 0
+        #debug(cap.edges())
         if self._topFillet > 0:
             try:
                 if self._stepped:
@@ -836,7 +856,7 @@ def showcase():
 
 def all_rows():
     for i in [1, 2, 3, 4]:
-        c = QSC().row(i).width(7).inverted().step(9).homing(HomingType.BAR)  # .legend(str(i), fontSize=6)
+        c = QSC().row(i).width(U(1)).inverted(True).step(3).homing(HomingType.BAR)  # .legend(str(i), fontSize=6)
         h = 1  # c._height
         show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
 
@@ -945,7 +965,18 @@ def test_all_types_same_width():
 # show_object(build_)
 # scooped_or_no()
 # all_rows_with_legends(2)
-# all_rows()
-s = QSC().row(1).width(U(2.25)).inverted().step(2).build()[0]
-#show_object(s)
+#all_rows()
+#s = QSC().row(4).width(U(7)).inverted().step(2).build()[0]
+s = QSC().row(4).width(U(7)).inverted().step(3).build()[0]
+#print(QSC().row(4).width(U(1)).inverted().maxPossibleFillet())
+#QSC().row(1).build()
+show_object(s.translate((-40,40,0)))
 #show_object(QSC().row(3)._createDish(True))
+#print(U(1).__repr__())
+#non_planar_face = (
+#    cq.Workplane().parametricSurface(lambda x, y: (x, y, x**2 + y**2)).val()
+#)
+#non_planar_face = (non_planar_face.rotate((0,0,0),(1,1,1),180))
+#extrude = cq.Solid.extrudeLinear(non_planar_face, cq.Vector(0, 0, 0.2))
+#show_object(extrude)
+#show_object(cq.Workplane().add(extrude).shell(1))
