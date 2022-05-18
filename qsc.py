@@ -393,7 +393,7 @@ class QSC:
         l = self._length.mm().get() - self._topDiff * -1 / 1.2
         dd_orig = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
         row_adjustments = {
-            # (extra DD, extraDDinverted, translateY, translateZ, rotation)
+            # (extra DD, extraDDinverted, translateY, translateZInverted, rotation)
             1: (2.0, 2.0, -1.0, -4.1, self._rowAngle.get(1)),
             2: (2.0, 2.0, -1.2, -3.1, self._rowAngle.get(2)),
             3: (0.0, 0.0, 0.0, -1.8, self._rowAngle.get(3)),
@@ -419,14 +419,13 @@ class QSC:
         # show_object(scaled_sphere, options={"color":(255,0,0), "alpha":0.5})
         # show_object(scaled_sphere2, options={"color":(0,255,0), "alpha":0.5})
 
-        z = row_adjustments[3]
         if inverted:
             top = (cq.Workplane().add(scaled_sphere).split(keepTop=True))
             b = (cq.Solid.extrudeLinear(top.faces("<Z").val(), cq.Vector(0,0,-dd)))
             return (cq.Workplane("XY")
                     .add(top)
                     .union(b)
-                    .translate((0, row_adjustments[2], z))
+                    .translate((0, row_adjustments[2], row_adjustments[3]))
                     .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
                     )
         else:
@@ -435,7 +434,7 @@ class QSC:
             return (cq.Workplane("XY")
                  .add(bottom)
                  .union(p)
-                 .translate((0, row_adjustments[2], z))
+                 .translate((0, row_adjustments[2], -1))
                  .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
                  )
 
@@ -856,9 +855,13 @@ def showcase():
 
 def all_rows():
     for i in [1, 2, 3, 4]:
-        c = QSC().row(i).width(U(1)).inverted(True).step(3).homing(HomingType.BAR)  # .legend(str(i), fontSize=6)
+        c = QSC().row(i).width(U(1))#.inverted(False)#.step(3).homing(HomingType.BAR)  # .legend(str(i), fontSize=6)
+        d = c.clone().inverted()
+        e = c.clone().stepped()
         h = 1  # c._height
         show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
+        show_object(d.build()[0].translate((19*1, -(i - 1) * 19, h / 2)))
+        show_object(e.build()[0].translate((19*2, -(i - 1) * 19, h / 2)))
 
 
 def all_rows_with_legends(width):
@@ -967,16 +970,3 @@ def test_all_types_same_width():
 # all_rows_with_legends(2)
 #all_rows()
 #s = QSC().row(4).width(U(7)).inverted().step(2).build()[0]
-s = QSC().row(4).width(U(7)).inverted().step(3).build()[0]
-#print(QSC().row(4).width(U(1)).inverted().maxPossibleFillet())
-#QSC().row(1).build()
-show_object(s.translate((-40,40,0)))
-#show_object(QSC().row(3)._createDish(True))
-#print(U(1).__repr__())
-#non_planar_face = (
-#    cq.Workplane().parametricSurface(lambda x, y: (x, y, x**2 + y**2)).val()
-#)
-#non_planar_face = (non_planar_face.rotate((0,0,0),(1,1,1),180))
-#extrude = cq.Solid.extrudeLinear(non_planar_face, cq.Vector(0, 0, 0.2))
-#show_object(extrude)
-#show_object(cq.Workplane().add(extrude).shell(1))
