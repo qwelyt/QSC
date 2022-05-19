@@ -72,7 +72,7 @@ class Percentage(object):
 
 
 class Constants:
-    STEP_PERCENTAGE = Percentage(0.7142857142857143)  # 1.25/1.75
+    RAISED_PERCENTAGE = Percentage(0.7142857142857143)  # 1.25/1.75
     STEP_PERCENTAGE_OF_TOTAL = Percentage(28.57142857142857)  # 0.5/1.75
     U_IN_MM = 19.05
 
@@ -140,22 +140,25 @@ class QSC:
         3: 0,
         4: -10
     }
+    _stabs = True
     _specialStabPlacement = None
-    _stemCherryDiameter = MM(5.6).get()  # mm
-    _stemHSlop = MM(0.0).get()  # mm
+    _stemCherryDiameter = MM(5.6).get()
+    _stemHSlop = MM(0.0).get()
     _stemOffset = (0, 0, 0)
     _stemRotation = 0
     _stemSupport = True
     _stemType = StemType.CHERRY
-    _stemVSlop = MM(0.0).get()  # mm
+    _stemVSlop = MM(0.0).get()
     _step = 10
-    _stepped = False
-    _topDiff = MM(-7).get()  # mm
+    _stepType = None
+    _stepHeight = None
+    _raisedWidth = 0
+    _topDiff = MM(-7).get()
     _topFillet = 0.6
     _topRectFillet = 2
-    _topThickness = MM(3).get()  # mm
-    _wallThickness = MM(1.5).get()  # mm
-    _width = U(1)  #
+    _topThickness = MM(3).get()
+    _wallThickness = MM(1.5).get()
+    _width = U(1)
 
     _font = "Arial"
     _fontSize = _height
@@ -163,7 +166,7 @@ class QSC:
     def __init__(self):
         pass
 
-    def _srect(self, width, depth, delta=9, op="chamfer"):
+    def _srect(self, width, depth, delta=9.0, op="chamfer"):
         rect = (cq.Sketch().rect(width, depth))
 
         if delta == 0:
@@ -175,7 +178,7 @@ class QSC:
         else:
             return rect
 
-    def _box(self, width, depth, height, diff=0, deltaA=9, deltaB=4, op="chamfer"):
+    def _box(self, width, depth, height, diff=0.0, deltaA=9.0, deltaB=4.0, op="chamfer"):
         a = self._srect(width, depth, deltaA, op)
         b = self._srect(width + diff, depth + diff, deltaB, op)
         return (cq.Workplane("XY")
@@ -234,50 +237,51 @@ class QSC:
         w = cq.Workplane("XY")
         s = self._stem().union(self._buildStemSupport(cap)) if self._stemSupport else self._stem()
         w.add(s.translate(self._stemOffset))
-        ##old_edges = cap.edges().objects
-        # added = (cap.faces("<Z")
-        #         .sketch()
-        #         #.push([(12,0)])
-        #         .circle(self._stemCherryDiameter/2)
-        #         .rect(1.5, 4.2, mode="s")
-        #         .rect(4.2,1.5,  mode="s")
-        #         .finalize()
-        #         .extrude(until="next")
-        #         )
-        # p = (cq.Workplane()
-        #     .box(20, 20, 20)
-        #     .faces(">Z")
-        #     .shell(2)
-        #     .faces(">Z")
-        #     .sketch()
-        #     .circle(5)
-        #     .rect(5,3, mode="s")
-        #     .finalize()
-        #     .extrude(until="next")
-        #     )
-        ##show_object(added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1))))
-        # added = (added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1)))
-        #         .chamfer(0.24)
-        #         )
-        # show_object(added)
-        # show_object(p.faces("<Z").workplane().faces(cq.selectors.RadiusNthSelector(1)))
-        # new_edges = added.edges().objects
-        # added = added.newObject(list(set(new_edges)-set(old_edges)))
-        # show_object(added.edges("<Z").chamfer(0.24))
-        # show_object(cap.faces("<Z").sketch().push([(12,0)]).circle(self._stemCherryDiameter/2).finalize().extrude(until="next").last().faces("<Z"))
-        # show_object(w)
+        if self._stabs:
+            ##old_edges = cap.edges().objects
+            # added = (cap.faces("<Z")
+            #         .sketch()
+            #         #.push([(12,0)])
+            #         .circle(self._stemCherryDiameter/2)
+            #         .rect(1.5, 4.2, mode="s")
+            #         .rect(4.2,1.5,  mode="s")
+            #         .finalize()
+            #         .extrude(until="next")
+            #         )
+            # p = (cq.Workplane()
+            #     .box(20, 20, 20)
+            #     .faces(">Z")
+            #     .shell(2)
+            #     .faces(">Z")
+            #     .sketch()
+            #     .circle(5)
+            #     .rect(5,3, mode="s")
+            #     .finalize()
+            #     .extrude(until="next")
+            #     )
+            ##show_object(added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1))))
+            # added = (added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1)))
+            #         .chamfer(0.24)
+            #         )
+            # show_object(added)
+            # show_object(p.faces("<Z").workplane().faces(cq.selectors.RadiusNthSelector(1)))
+            # new_edges = added.edges().objects
+            # added = added.newObject(list(set(new_edges)-set(old_edges)))
+            # show_object(added.edges("<Z").chamfer(0.24))
+            # show_object(cap.faces("<Z").sketch().push([(12,0)]).circle(self._stemCherryDiameter/2).finalize().extrude(until="next").last().faces("<Z"))
+            # show_object(w)
 
-        if self._specialStabPlacement is not None:
-            m = s.translate(self._specialStabPlacement[0])
-            n = s.translate(self._specialStabPlacement[1])
-            mn = m.union(n)
-            w.add(mn)
-        elif wORl >= 6:
-            w.add(s.translate((-50, 0, 0)))
-            w.add(s.translate((50, 0, 0)))
-        elif wORl >= 2:
-            w.add(s.translate((-12, 0, 0)))
-            w.add(s.translate((12, 0, 0)))
+            if self._specialStabPlacement is not None:
+                m = s.translate(self._specialStabPlacement[0])
+                n = s.translate(self._specialStabPlacement[1])
+                mn = m.union(n)
+                w.add(mn)
+            elif wORl >= 6:
+                w.add(s.translate((-50, 0, 0)))
+                w.add(s.translate((50, 0, 0)))
+            elif wORl >= 2:
+                w.add(s.translate((-12, 0, 0)))
+                w.add(s.translate((12, 0, 0)))
 
         return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), self._stemRotation))
 
@@ -319,10 +323,40 @@ class QSC:
         t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, combine='a', cut=False)
         return c, t
 
+    def _stepped_base(self):
+        l = self._length.mm().get()
+        w = self._width.mm().get()
+        step_height = self._height/2 if self._stepHeight is None else self._stepHeight.mm().get()
+        raised = self._box(self._raisedWidth, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+        step = self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+        step = (step.faces(">Z")
+                .sketch()
+                .rect(w, l)
+                .finalize()
+                .extrude(-(self._height-step_height), "cut")
+                )
+        stepWidth = w - self._raisedWidth
+
+        if self._stepType == StepType.LEFT:
+            return (raised.translate((-stepWidth / 2, 0, 0))
+                    .add(step)
+                    .combine()
+                    )
+        elif self._stepType == StepType.RIGHT:
+            return (raised.translate((stepWidth / 2, 0, 0))
+                    .add(step)
+                    .combine()
+                    )
+        else: # self._stepType == StepType.CENTER:
+            return step.add(raised).combine()
+
+
+
+
     def _base(self):
         l = self._length.mm().get()
         w = self._width.mm().get()
-        if self._isoEnter and self._stepped:
+        if self._isoEnter and self._stepType is not None:
             w6 = w / 6
             lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             upper = self._box(w, l / 2, self._height / 2, self._topDiff / 2, self._bottomRectFillet, self._topRectFillet, "fillet")
@@ -332,26 +366,46 @@ class QSC:
             lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             upper = self._box(w, l / 2, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
-        elif self._stepped:
-            highWidth = Constants.STEP_PERCENTAGE.apply(w)
-            stepWidth = w - highWidth
-            heightDivider = 2 if not self._row == 1 else 2
-            high = self._box(highWidth, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            step = self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            step = (step.faces(">Z")
-                    .sketch()
-                    .rect(w, l)
-                    .finalize()
-                    .extrude(-self._height / heightDivider, "cut")
-                    )
-            return high.translate((-stepWidth / 2, 0, 0)).add(step).combine()
+        elif self._stepType:
+            return self._stepped_base()
         else:
             return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+
+    def _stepped_hollow(self):
+        l = self._length.mm().get() - (self._wallThickness*2)
+        w = self._width.mm().get() - (self._wallThickness*2)
+        height = self._height - self._topThickness
+        step_height = self._height/2 if self._stepHeight is None else self._stepHeight.mm().get()
+        step_height = step_height - 2
+        raised_width = self._raisedWidth - (self._wallThickness*2)
+        raised = self._box(raised_width, l, height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+        step = self._box(w, l, height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+        step_cut = height - step_height
+        step = (step.faces(">Z")
+                .sketch()
+                .rect(w, l)
+                .finalize()
+                .extrude(-step_cut, "cut")
+                )
+        step_width = w - raised_width
+
+        if self._stepType == StepType.LEFT:
+            return (raised.translate((-step_width / 2, 0, 0))
+                    .add(step)
+                    .combine()
+                    )
+        elif self._stepType == StepType.RIGHT:
+            return (raised.translate((step_width / 2, 0, 0))
+                    .add(step)
+                    .combine()
+                    )
+        else: # self._stepType == StepType.CENTER:
+            return step.add(raised).combine()
 
     def _hollow(self):
         il = self._length.mm().get() - (self._wallThickness * 2)
         iw = self._width.mm().get() - (self._wallThickness * 2)
-        if self._isoEnter and self._stepped:
+        if self._isoEnter and self._stepType:
             ih = self._height - self._topThickness
             il2 = U(1).mm().get() - (self._wallThickness * 2)
             w = self._width.mm().get()
@@ -360,20 +414,8 @@ class QSC:
             lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
             upper = self._box(iw, il2, ih / 2, self._topDiff / 2, self._bottomRectFillet, self._topRectFillet, "fillet")
             return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
-        elif self._stepped:
-            highWidth = Constants.STEP_PERCENTAGE.apply(iw)
-            stepWidth = iw - highWidth
-            heightDivider = 2 if not self._row == 1 else 3
-            ihHigh = self._height - self._topThickness
-            high = self._box(highWidth, il, ihHigh, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            step = self._box(iw, il, ihHigh, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            step = (step.faces(">Z")
-                    .sketch()
-                    .rect(iw, il)
-                    .finalize()
-                    .extrude(-self._height / heightDivider, "cut")
-                    )
-            return high.translate((-stepWidth / 2, 0, 0)).add(step).combine()
+        elif self._stepType:
+            return self._stepped_hollow()
         elif self._isoEnter:
             ih = self._height - self._topThickness
             il2 = U(1).mm().get() - (self._wallThickness * 2)
@@ -568,6 +610,10 @@ class QSC:
         self._stemSupport = not disable
         return self
 
+    def disableStabs(self, disable: bool = True):
+        self._stabs = not disable
+        return self
+
     def specialStabPlacement(self, placement: Tuple[Tuple[float, float, float], Tuple[float, float, float]]):
         self._specialStabPlacement = placement
         return self
@@ -589,16 +635,30 @@ class QSC:
         self._inverted = inverted
         return self
 
-    # def stepped(self, stepType=StepType.LEFT: StepType, stepAmount=Constants.STEP_PERCENTAGE: float):
-    # def stepped(self, stepType=StepType.LEFT: StepType, raisedAmount: Union[Percentage,U] = Contants.STEP_AMOUNT):
-    def stepped(self, steppedKey: bool = True, offset: bool=True):
-        self._stepped = steppedKey
+    def stepped(self, step_type: StepType = StepType.LEFT, raised_width: Percentage | U | MM = None, step_height: MM = None):
+        self._stepType = step_type
+        self._stepHeight = step_height
         if self._isoEnter:
             return self
         else:
-            lowerWidth = Constants.STEP_PERCENTAGE.apply(self._width.mm().get())
-            offset = (self._width.mm().get() - lowerWidth) / 2.0
-            return self.stemOffset((-offset, 0.0, 0.0))
+            if raised_width is None:
+                raised_width = {
+                    StepType.LEFT: Constants.RAISED_PERCENTAGE,
+                    StepType.CENTER: U(1),
+                    StepType.RIGHT: Constants.RAISED_PERCENTAGE,
+                }.get(step_type)
+
+            raised = 0
+            if type(raised_width) is Percentage:
+                raised = raised_width.apply(self._width.mm().get())
+            elif type(raised_width) is U or type(raised_width) is MM:
+                raised = raised_width.mm().get()
+            self._raisedWidth = raised
+            if step_type == StepType.CENTER:
+                return self
+            offset = (self._width.mm().get() - raised) / 2.0
+            offset = offset * -1 if step_type == StepType.LEFT else offset
+            return self.stemOffset((offset, 0.0, 0.0))
 
     def isoEnter(self, iso: bool = True):
         self._isoEnter = iso
@@ -645,6 +705,7 @@ class QSC:
                 .bottomFillet(self._bottomFillet)
                 .bottomRectFillet(self._bottomRectFillet)
                 .disableStemSupport(not self._stemSupport)
+                .disableStabs(not self._stabs)
                 .dishThickness(self._dishThickness)
                 .height(self._height)
                 .homing(self._homingType, False)
@@ -657,7 +718,7 @@ class QSC:
                 .stemHSlop(self._stemHSlop)
                 .stemType(self._stemType)
                 .stemVSlop(self._stemVSlop)
-                .stepped(self._stepped, False)
+                .stepped(self._stepType, self._raisedWidth, self._stepHeight)
                 .stemOffset(self._stemOffset)
                 .stemRotation(self._stemRotation)
                 .step(self._step)
@@ -721,7 +782,7 @@ class QSC:
         #debug(cap.edges())
         if self._topFillet > 0:
             try:
-                if self._stepped:
+                if self._stepType:
                     # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
                     selector = {
                         1: ">Z[1]",
@@ -785,7 +846,7 @@ class QSC:
         name = "qsc_row" + str(self._row)
         name = name + "_isoEnter" if self._isoEnter else name + "_" + str(self._width.u().get()) + "x" + str(self._length.u().get())
         name = name + "_i" if self._inverted else name
-        name = name + "_stepped" if self._stepped else name
+        name = name + "_stepped" if self._stepType else name
         name = name + "_" + self._legend if self._legend is not None else name
         return name
 
@@ -969,4 +1030,13 @@ def test_all_types_same_width():
 # scooped_or_no()
 # all_rows_with_legends(2)
 #all_rows()
-#s = QSC().row(4).width(U(7)).inverted().step(2).build()[0]
+# size = U(1.75)
+# q = QSC().row(3).width(size).step(9).disableStabs()
+# s = q.clone().stepped(step_type=StepType.RIGHT, step_height=MM(2.25)).build()[0]
+# t = q.clone().stepped(step_type=StepType.CENTER).build()[0]
+# r = q.clone().stepped(step_type=StepType.RIGHT).build()[0]
+
+# show_object(s)
+# show_object(t.translate((0,24,0)))
+# show_object(r.translate((0,-24,0)))
+#m = QSC().row(3).width(U(0.6)).build()[0]
