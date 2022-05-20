@@ -1,10 +1,17 @@
 from __future__ import annotations
 
-from enum import Enum, auto
 from typing import Tuple, Iterable
 
 import cadquery as cq
 from OCP.StdFail import StdFail_NotDone
+
+from Constants import Constants
+from HomingType import HomingType
+from MM import MM
+from Percentage import Percentage
+from StemType import StemType
+from StepType import StepType
+from U import U
 
 
 def _maxFillet(
@@ -42,86 +49,8 @@ cq.Shape.maxFillet = _maxFillet
 # TODO
 # * Alps?
 
-class HomingType(Enum):
-    BAR = 1
-    SCOOPED = 2
-    DOT = 3
 
-
-class StemType(Enum):
-    CHERRY = auto()
-
-
-class StepType(Enum):
-    LEFT = auto()
-    CENTER = auto()
-    RIGHT = auto()
-
-
-class Percentage(object):
-    _percentage = 0
-
-    def __init__(self, percentage):
-        self._percentage = percentage
-
-    def __str__(self):
-        return str(self._percentage)
-
-    def apply(self, mm):
-        return mm * self._percentage
-
-
-class Constants:
-    RAISED_PERCENTAGE = Percentage(0.7142857142857143)  # 1.25/1.75
-    STEP_PERCENTAGE_OF_TOTAL = Percentage(28.57142857142857)  # 0.5/1.75
-    U_IN_MM = 19.05
-
-
-class U(object):
-    _u = 0
-
-    def __init__(self, u):
-        self._u = u
-
-    def __str__(self):
-        return str(self._u)+"u"
-
-    def __repr__(self):
-        return f'U(u={self._u})'
-
-    def u(self) -> U:
-        return self
-
-    def mm(self) -> MM:
-        return MM(self._u * Constants.U_IN_MM)
-
-    def get(self) -> float:
-        return self._u
-
-
-class MM(object):
-    _mm = 0
-
-    def __init__(self, mm):
-        self._mm = mm
-
-    def __str__(self):
-        return str(self._mm + "mm")
-
-    def __repr__(self):
-        return f'MM(mm={self._mm})'
-
-    def u(self) -> U:
-        return U(self._mm / Constants.U_IN_MM)
-
-    def mm(self) -> MM:
-        return self
-
-    def get(self) -> float:
-        return self._mm
-
-
-class QSC:
+class QSC(object):
     _bottomFillet = 0.6
     _bottomRectFillet = 1
     _debug = False
@@ -326,14 +255,14 @@ class QSC:
     def _stepped_base(self):
         l = self._length.mm().get()
         w = self._width.mm().get()
-        step_height = self._height/2 if self._stepHeight is None else self._stepHeight.mm().get()
+        step_height = self._height / 2 if self._stepHeight is None else self._stepHeight.mm().get()
         raised = self._box(self._raisedWidth, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
         step = self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
         step = (step.faces(">Z")
                 .sketch()
                 .rect(w, l)
                 .finalize()
-                .extrude(-(self._height-step_height), "cut")
+                .extrude(-(self._height - step_height), "cut")
                 )
         stepWidth = w - self._raisedWidth
 
@@ -347,11 +276,8 @@ class QSC:
                     .add(step)
                     .combine()
                     )
-        else: # self._stepType == StepType.CENTER:
+        else:  # self._stepType == StepType.CENTER:
             return step.add(raised).combine()
-
-
-
 
     def _base(self):
         l = self._length.mm().get()
@@ -372,12 +298,12 @@ class QSC:
             return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
 
     def _stepped_hollow(self):
-        l = self._length.mm().get() - (self._wallThickness*2)
-        w = self._width.mm().get() - (self._wallThickness*2)
+        l = self._length.mm().get() - (self._wallThickness * 2)
+        w = self._width.mm().get() - (self._wallThickness * 2)
         height = self._height - self._topThickness
-        step_height = self._height/2 if self._stepHeight is None else self._stepHeight.mm().get()
+        step_height = self._height / 2 if self._stepHeight is None else self._stepHeight.mm().get()
         step_height = step_height - 2
-        raised_width = self._raisedWidth - (self._wallThickness*2)
+        raised_width = self._raisedWidth - (self._wallThickness * 2)
         raised = self._box(raised_width, l, height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
         step = self._box(w, l, height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
         step_cut = height - step_height
@@ -399,7 +325,7 @@ class QSC:
                     .add(step)
                     .combine()
                     )
-        else: # self._stepType == StepType.CENTER:
+        else:  # self._stepType == StepType.CENTER:
             return step.add(raised).combine()
 
     def _hollow(self):
@@ -463,7 +389,7 @@ class QSC:
 
         if inverted:
             top = (cq.Workplane().add(scaled_sphere).split(keepTop=True))
-            b = (cq.Solid.extrudeLinear(top.faces("<Z").val(), cq.Vector(0,0,-dd)))
+            b = (cq.Solid.extrudeLinear(top.faces("<Z").val(), cq.Vector(0, 0, -dd)))
             return (cq.Workplane("XY")
                     .add(top)
                     .union(b)
@@ -472,14 +398,13 @@ class QSC:
                     )
         else:
             bottom = (cq.Workplane().add(scaled_sphere).split(keepBottom=True))
-            p = (cq.Solid.extrudeLinear(bottom.faces(">Z").val(), cq.Vector(0,0,dd)))
+            p = (cq.Solid.extrudeLinear(bottom.faces(">Z").val(), cq.Vector(0, 0, dd)))
             return (cq.Workplane("XY")
-                 .add(bottom)
-                 .union(p)
-                 .translate((0, row_adjustments[2], -1))
-                 .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
-                 )
-
+                    .add(bottom)
+                    .union(p)
+                    .translate((0, row_adjustments[2], -1))
+                    .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
+                    )
 
     def _dish(self, cap):
         dish = self._createDish(self._inverted)
@@ -498,12 +423,12 @@ class QSC:
                 ]
             )
             sc = cutter.translate(-cutter.Center()).transformGeometry(scale_matrix).translate(cutter.Center())
-            #show_object(cutter)
-            #debug(sc)
-            #debug(cap)
-            #debug(cq.Workplane().add(cutter).shell(-1))
-            #print(cutter.maxFillet(cutter.Edges(), 0.01, 1000))
-            #cap = cap.cut(cutter)
+            # show_object(cutter)
+            # debug(sc)
+            # debug(cap)
+            # debug(cq.Workplane().add(cutter).shell(-1))
+            # print(cutter.maxFillet(cutter.Edges(), 0.01, 1000))
+            # cap = cap.cut(cutter)
             cap = cap.cut(sc)
             cap = cap.union(intersection)
         else:
@@ -776,10 +701,10 @@ class QSC:
         return iterfillet
 
     def _fillet(self, cap):
-        #maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.001, 100)
-        #print("hoho", maxTop)
+        # maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.001, 100)
+        # print("hoho", maxTop)
         # maxStep = 0
-        #debug(cap.edges())
+        # debug(cap.edges())
         if self._topFillet > 0:
             try:
                 if self._stepType:
@@ -916,13 +841,13 @@ def showcase():
 
 def all_rows():
     for i in [1, 2, 3, 4]:
-        c = QSC().row(i).width(U(1))#.inverted(False)#.step(3).homing(HomingType.BAR)  # .legend(str(i), fontSize=6)
+        c = QSC().row(i).width(U(1))  # .inverted(False)#.step(3).homing(HomingType.BAR)  # .legend(str(i), fontSize=6)
         d = c.clone().inverted()
         e = c.clone().stepped()
         h = 1  # c._height
         show_object(c.build()[0].translate((0, -(i - 1) * 19, h / 2)))
-        show_object(d.build()[0].translate((19*1, -(i - 1) * 19, h / 2)))
-        show_object(e.build()[0].translate((19*2, -(i - 1) * 19, h / 2)))
+        show_object(d.build()[0].translate((19 * 1, -(i - 1) * 19, h / 2)))
+        show_object(e.build()[0].translate((19 * 2, -(i - 1) * 19, h / 2)))
 
 
 def all_rows_with_legends(width):
@@ -1014,7 +939,6 @@ def test_all_types_same_width():
             show_object(stepped.translate((20, 0, 0)))
             show_object(inverted.translate((-20, 0, 0)))
 
-
 # qsc = QSC().row(1).width(1)
 # n,_ = qsc.build()
 # i,_ = qsc.inverted().build()
@@ -1029,9 +953,9 @@ def test_all_types_same_width():
 # show_object(build_)
 # scooped_or_no()
 # all_rows_with_legends(2)
-#all_rows()
+# all_rows()
 # size = U(1.75)
-# q = QSC().row(3).width(size).step(9).disableStabs()
+# q = QSC().row(3).width(size).step(9).disableStabs().inverted()
 # s = q.clone().stepped(step_type=StepType.RIGHT, step_height=MM(2.25)).build()[0]
 # t = q.clone().stepped(step_type=StepType.CENTER).build()[0]
 # r = q.clone().stepped(step_type=StepType.RIGHT).build()[0]
