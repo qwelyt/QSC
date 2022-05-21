@@ -1,5 +1,5 @@
 from __future__ import annotations
-from Constants import Constants
+from .Constants import Constants
 
 
 class MM(object):

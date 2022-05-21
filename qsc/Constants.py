@@ -1,4 +1,4 @@
-from Percentage import Percentage
+from .Percentage import Percentage
 
 
 class Constants:

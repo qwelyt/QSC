@@ -1,4 +1,13 @@
-from qsc import *
+from qsc import (
+    Constants,
+    HomingType,
+    MM,
+    Percentage,
+    QSC,
+    StemType,
+    StepType,
+    U,
+)
 
 
 def show(cap: QSC, rotate=False):
@@ -17,6 +26,8 @@ cap = (QSC()
        .row(3)
        .width(U(3))
        .legend("Hi", fontSize=6)
+       .inverted()
+       .homing(HomingType.BAR)
        )
 
 show(cap)

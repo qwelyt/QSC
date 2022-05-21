@@ -5,13 +5,13 @@ from typing import Tuple, Iterable
 import cadquery as cq
 from OCP.StdFail import StdFail_NotDone
 
-from Constants import Constants
-from HomingType import HomingType
-from MM import MM
-from Percentage import Percentage
-from StemType import StemType
-from StepType import StepType
-from U import U
+from .Percentage import Percentage
+from .Constants import Constants
+from .HomingType import HomingType
+from .MM import MM
+from .StemType import StemType
+from .StepType import StepType
+from .U import U
 
 
 def _maxFillet(
@@ -44,10 +44,6 @@ def _maxFillet(
 
 
 cq.Shape.maxFillet = _maxFillet
-
-
-# TODO
-# * Alps?
 
 
 class QSC(object):
@@ -804,7 +800,7 @@ class QSC(object):
 
     def _rotate(self, w):
         return (w.rotate((0, 0, 0), (0, 0, 1), -self._stemRotation)
-                .rotate((0, 0, 0), (1, 0, 0), 250)
+                .rotate((0, 0, 0), (1, 0, 0), 105)#-257)
                 )
 
     def _printSettings(self):

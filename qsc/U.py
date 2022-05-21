@@ -1,5 +1,5 @@
 from __future__ import annotations
-from Constants import Constants
+from .Constants import Constants
 
 
 class U(object):
@@ -18,7 +18,7 @@ class U(object):
         return self
 
     def mm(self) -> MM:
-        from MM import MM
+        from .MM import MM
         return MM(self._u * Constants.U_IN_MM)
 
     def get(self) -> float:

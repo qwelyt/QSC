@@ -1,3 +1,5 @@
+#
+
 class Percentage(object):
     _percentage = 0
 
