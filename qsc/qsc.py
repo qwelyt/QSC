@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from typing import Tuple, Iterable
+from typing import Tuple, Iterable, TypeVar
 
 import cadquery as cq
 from OCP.StdFail import StdFail_NotDone
 
+from .types import Real
 from .Percentage import Percentage
 from .Constants import Constants
 from .HomingType import HomingType
 from .MM import MM
-from .StemType import StemType
+from .stem import StemType, StemSettings, CherrySettings, Stem
 from .StepType import StepType
 from .U import U
+
+T = TypeVar("T", bound="QSC")
 
 
 def _maxFillet(
@@ -19,7 +22,7 @@ def _maxFillet(
         edgeList: Iterable[cq.Edge],
         tolerance=0.1,
         maxIterations: int = 10,
-) -> float:
+) -> Real:
     if not self.isValid():
         raise ValueError("Invalid Shape")
     window_max = 2 * self.BoundingBox().DiagonalLength
@@ -67,13 +70,7 @@ class QSC(object):
     }
     _stabs = True
     _specialStabPlacement = None
-    _stemCherryDiameter = MM(5.6).get()
-    _stemHSlop = MM(0.0).get()
-    _stemOffset = (0, 0, 0)
-    _stemRotation = 0
-    _stemSupport = True
-    _stemType = StemType.CHERRY
-    _stemVSlop = MM(0.0).get()
+    _stemSettings = CherrySettings()
     _step = 10
     _stepType = None
     _stepHeight = None
@@ -91,21 +88,21 @@ class QSC(object):
     def __init__(self):
         pass
 
-    def _srect(self, width, depth, delta=9.0, op="chamfer"):
+    def _srect(self, width: Real, depth: Real, delta: Real = 9.0, op: str = "chamfer"):
         rect = (cq.Sketch().rect(width, depth))
 
         if delta == 0:
             return rect
         elif op == "chamfer":
-            return (rect.vertices().chamfer(delta))
+            return rect.vertices().chamfer(delta)
         elif op == "fillet":
-            return (rect.vertices().fillet(delta))
+            return rect.vertices().fillet(delta)
         else:
             return rect
 
-    def _box(self, width, depth, height, diff=0.0, deltaA=9.0, deltaB=4.0, op="chamfer"):
-        a = self._srect(width, depth, deltaA, op)
-        b = self._srect(width + diff, depth + diff, deltaB, op)
+    def _box(self, width: Real, depth: Real, height: Real, diff: Real = 0.0, delta_a: Real = 9.0, delta_b: Real = 4.0, op: str = "chamfer"):
+        a = self._srect(width, depth, delta_a, op)
+        b = self._srect(width + diff, depth + diff, delta_b, op)
         return (cq.Workplane("XY")
                 .placeSketch(a, b.moved(cq.Location(cq.Vector(0, 0, height))))
                 .loft()
@@ -113,55 +110,78 @@ class QSC(object):
 
     def _stem(self):
         stemHeight = self._height - self._topThickness
-        if self._stemType == StemType.CHERRY:
-            cherryCross = (1.5 + self._stemHSlop, 4.2 + self._stemVSlop)
-            return (cq.Workplane("XY")
-                    .sketch()
-                    .circle(self._stemCherryDiameter / 2)
-                    .rect(cherryCross[0], cherryCross[1], mode="s")
-                    .rect(cherryCross[1], cherryCross[0], mode="s")
-                    .finalize()
-                    .extrude(stemHeight)
-                    .faces("<Z")
-                    .chamfer(0.24)
-                    )
-        else:
-            return cq.Workplane().box(2, 2, stemHeight)
+
+        stem = Stem(self._stemSettings).build()
+        return (cq.Workplane("XY")
+                .placeSketch(stem)
+                .extrude(stemHeight)
+                .faces("<Z")
+                .chamfer(0.24)
+                )
+
+        # if self._stemType == StemType.CHERRY:
+        #     cherryCross = (1.5 + self._stemHSlop, 4.2 + self._stemVSlop)
+        #     return (cq.Workplane("XY")
+        #             .sketch()
+        #             .circle(self._stemCherryDiameter / 2)
+        #             .rect(cherryCross[0], cherryCross[1], mode="s")
+        #             .rect(cherryCross[1], cherryCross[0], mode="s")
+        #             .finalize()
+        #             .extrude(stemHeight)
+        #             .faces("<Z")
+        #             .chamfer(0.24)
+        #             )
+        # else:
+        #     return cq.Workplane().box(2, 2, stemHeight)
+
+    def _build_wedge(self, cap, extra):
+        def _worl(bb, rotation, extra):
+            l = bb.ylen if rotation == 0 or rotation == 180 else bb.xlen
+            l = l + extra
+            l = l - U(0.25).mm().get() if self._isoEnter else l
+            return l
+
+        def _len(bb, rotation, extra1, extra2):
+            l = _worl(bb, rotation, extra1)
+            l = (l - self._wallThickness) / 2 + extra2
+            return l
+
+        capBB = cap.findSolid().BoundingBox()
+        h = self._height - self._topThickness - 0.3
+        bottomBB = cap.faces("<Z").findSolid().BoundingBox()
+        topBB = cap.faces("<Z").section(h).findSolid().BoundingBox()
+        rotation = self._stemSettings.get_rotation()
+        bottom_fillet = -(self._bottomFillet * 2)
+        bottom = _len(bottomBB, rotation, bottom_fillet, extra)
+        top = _len(topBB, rotation, 0, extra)
+
+        diff = bottom - top
+        closing = 0.5
+
+        a = self._srect(0.5, bottom + closing, op="none")
+        b = self._srect(0.5, top + closing, op="none")
+        offset = (_worl(bottomBB, rotation, bottom_fillet) - self._wallThickness) / 4 - extra - 1
+        return (cq.Workplane("XY")
+                .placeSketch(a, b.moved(cq.Location(cq.Vector(0, diff / 2, h))))
+                .loft()
+                .translate((0, -offset, 0))
+                )
 
     def _buildStemSupport(self, cap):
-        if self._stemType == StemType.CHERRY:
-            bottomBB = cap.faces("<Z").findSolid().BoundingBox()
-            wORl = bottomBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else bottomBB.xlen
-            wORl = wORl - self._bottomFillet * 2
-            wORl = wORl - U(0.25).mm().get() if self._isoEnter else wORl
-            w = (wORl - self._wallThickness) / 2 - self._stemCherryDiameter / 2
-            h = self._height - self._topThickness - 0.3
-
-            topBB = cap.faces("<Z").section(h).findSolid().BoundingBox()
-            topLen = topBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else topBB.xlen
-            topLen = topLen - U(0.25).mm().get() if self._isoEnter else topLen
-            w2 = (topLen - self._wallThickness) / 2 - self._stemCherryDiameter / 2
-            diff = w - w2
-
-            closing = 0.5
-            a = self._srect(0.5, w + closing, op="none")
-            b = self._srect(0.5, w2 + closing, op="none")
-
-            supportOffset = (wORl - self._wallThickness) / 4 + self._stemCherryDiameter / 2 - 1
-            return (cq.Workplane("XY")
-                    .placeSketch(a, b.moved(cq.Location(cq.Vector(0, diff / 2, h))))
-                    .loft()
-                    .translate((0, -supportOffset, 0))
-                    )
+        if self._stemSettings.get_type() == StemType.CHERRY:
+            return self._build_wedge(cap, -self._stemSettings.get_radius())
         else:
-            return (cq.Workplane("XY").box(2, 2, 2))
+            return cq.Workplane("XY").box(2, 2, 2)
 
     def _stemAndSupport(self, cap):
-        wORl = self._width if self._stemRotation == 0 or self._stemRotation == 180 else self._length
+        rotation = self._stemSettings.get_rotation()
+        offset = self._stemSettings.get_offset()
+        support = self._stemSettings.get_support()
+        wORl = self._width if rotation == 0 or rotation == 180 else self._length
         wORl = wORl.u().get()
         w = cq.Workplane("XY")
-        s = self._stem().union(self._buildStemSupport(cap)) if self._stemSupport else self._stem()
-        w.add(s.translate(self._stemOffset))
+        s = self._stem().union(self._buildStemSupport(cap)) if support else self._stem()
+        w.add(s.translate(offset))
         if self._stabs:
             ##old_edges = cap.edges().objects
             # added = (cap.faces("<Z")
@@ -208,7 +228,7 @@ class QSC(object):
                 w.add(s.translate((-12, 0, 0)))
                 w.add(s.translate((12, 0, 0)))
 
-        return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), self._stemRotation))
+        return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), rotation))
 
     def _addLegend(self, cap):
         if self._legend is None:
@@ -238,7 +258,7 @@ class QSC(object):
                 180: "<<Y[2]",
                 270: ">>X[3]"
             }
-        }.get(self._row).get(self._stemRotation)
+        }.get(self._row).get(self._stemSettings.get_rotation())
         # show_object(cap.faces(sideSelector))
         nc = (cap.faces(sideSelector)
               .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
@@ -468,74 +488,50 @@ class QSC(object):
         else:
             return cap
 
-    def wallThickness(self, thickness: float):
+    def wall_thickness(self, thickness: Real) -> T:
         self._wallThickness = thickness
         return self
 
-    def topThickness(self, thickness: float):
+    def top_thickness(self, thickness: Real) -> T:
         self._topThickness = thickness
         return self
 
-    def width(self, width: U | MM):
+    def width(self, width: U | MM) -> T:
         self._width = width
         return self
 
-    def length(self, length: U | MM):
+    def length(self, length: U | MM) -> T:
         self._length = length
         return self
 
-    def height(self, height: float):
+    def height(self, height: Real) -> T:
         self._height = height
         return self
 
-    def legend(self, legend: str, fontSize: float = -1, firstLayerHeight: float = 1.2, font: str = "Arial"):
+    def legend(self, legend: str, font_size: Real = -1, first_layer_height: Real = 1.2, font: str = "Arial") -> T:
         self._legend = legend
-        self._fontSize = self._height if fontSize == -1 else fontSize
-        self._firstLayerHeight = firstLayerHeight
+        self._fontSize = self._height if font_size == -1 else font_size
+        self._firstLayerHeight = first_layer_height
         self._font = font
         return self
 
-    def topDiff(self, diff: float):
+    def top_diff(self, diff: Real) -> T:
         self._topDiff = diff
         return self
 
-    def dishThickness(self, thickness: float):
+    def dish_thickness(self, thickness: Real) -> T:
         self._dishThickness = thickness
         return self
 
-    def stemType(self, stemtype: StemType):
-        self._stemType = stemtype
+    def stem_settings(self, stem_settings: StemSettings) -> T:
+        self._stemSettings = stem_settings
         return self
 
-    def stemOffset(self, offset: Tuple[float, float, float]):
-        self._stemOffset = offset
-        return self
-
-    def stemRotation(self, rotation: int):
-        self._stemRotation = rotation
-        return self
-
-    def stemCherryDiameter(self, d: float):
-        self._stemCherryDiameter = d
-        return self
-
-    def stemVSlop(self, slop: float):
-        self._stemVSlop = slop
-        return self
-
-    def stemHSlop(self, slop: float):
-        self._stemHSlop = slop
-        return self
-
-    def disableStemSupport(self, disable: bool = True):
-        self._stemSupport = not disable
-        return self
-
-    def disableStabs(self, disable: bool = True):
+    def disable_stabs(self, disable: bool = True) -> T:
         self._stabs = not disable
         return self
 
-    def specialStabPlacement(self, placement: Tuple[Tuple[float, float, float], Tuple[float, float, float]]):
+    def special_stab_placement(self, placement: Tuple[Tuple[Real, Real, Real], Tuple[Real, Real, Real]]) -> T:
         self._specialStabPlacement = placement
         return self
 
@@ -552,11 +548,11 @@ class QSC(object):
                 self._height += height_adjustment
         return self
 
-    def inverted(self, inverted: bool = True):
+    def inverted(self, inverted: bool = True) -> T:
         self._inverted = inverted
         return self
 
-    def stepped(self, step_type: StepType = StepType.LEFT, raised_width: Percentage | U | MM = None, step_height: MM = None):
+    def stepped(self, step_type: StepType = StepType.LEFT, raised_width: Percentage | U | MM = None, step_height: MM = None) -> T:
         self._stepType = step_type
         self._stepHeight = step_height
         if self._isoEnter:
@@ -579,34 +575,33 @@ class QSC(object):
                 return self
             offset = (self._width.mm().get() - raised) / 2.0
             offset = offset * -1 if step_type == StepType.LEFT else offset
-            return self.stemOffset((offset, 0.0, 0.0))
+            return self.stem_settings(self._stemSettings.offset((offset, 0.0, 0.0)))
 
-    def isoEnter(self, iso: bool = True):
+    def iso_enter(self, iso: bool = True) -> T:
         self._isoEnter = iso
         self.width(U(1.5))
         self.length(U(2))
-        self.stemRotation(90)
-        return self.stemOffset((0, 0, 0))
+        return self.stem_settings(self._stemSettings.rotation(90).offset((0, 0, 0)))
 
-    def topRectFillet(self, value: float):
+    def top_rect_fillet(self, value: Real) -> T:
         self._topRectFillet = value
         return self
 
-    def bottomRectFillet(self, value: float):
+    def bottom_rect_fillet(self, value: Real) -> T:
         self._bottomRectFillet = value
         return self
 
-    def topFillet(self, value: float):
+    def top_fillet(self, value: Real) -> T:
         self._topFillet = value
         return self
 
-    def bottomFillet(self, value: float):
+    def bottom_fillet(self, value: Real) -> T:
         self._bottomFillet = value
         return self
 
-    def row(self, row: int, adjustRow=True):
+    def row(self, row: int, adjust_row=True) -> T:
         self._row = row
-        if adjustRow:
+        if adjust_row:
             row_adjustments = {
                 1: (5, 3),
                 2: (1.5, 0.5),
@@ -614,40 +609,34 @@ class QSC(object):
                 4: (2, 1),
             }.get(self._row)
             self.height(self._height + row_adjustments[0])
-            self.topThickness(self._topThickness + row_adjustments[1])
+            self.top_thickness(self._topThickness + row_adjustments[1])
         return self
 
-    def step(self, steps):
+    def step(self, steps) -> T:
         self._step = steps
         return self
 
-    def clone(self):
+    def clone(self) -> QSC:
         return (QSC()
-                .bottomFillet(self._bottomFillet)
-                .bottomRectFillet(self._bottomRectFillet)
-                .disableStemSupport(not self._stemSupport)
-                .disableStabs(not self._stabs)
-                .dishThickness(self._dishThickness)
+                .bottom_fillet(self._bottomFillet)
+                .bottom_rect_fillet(self._bottomRectFillet)
+                .disable_stabs(not self._stabs)
+                .dish_thickness(self._dishThickness)
                 .height(self._height)
                 .homing(self._homingType, False)
                 .inverted(self._inverted)
-                .isoEnter(self._isoEnter)
+                .iso_enter(self._isoEnter)
                 .legend(self._legend, self._fontSize, self._firstLayerHeight, self._font)
                 .length(self._length)
                 .row(self._row, False)
-                .stemCherryDiameter(self._stemCherryDiameter)
-                .stemHSlop(self._stemHSlop)
-                .stemType(self._stemType)
-                .stemVSlop(self._stemVSlop)
-                .stepped(self._stepType, self._raisedWidth, self._stepHeight)
-                .stemOffset(self._stemOffset)
-                .stemRotation(self._stemRotation)
+                .stem_settings(self._stemSettings)
                 .step(self._step)
-                .topDiff(self._topDiff)
-                .topFillet(self._topFillet)
-                .topRectFillet(self._topRectFillet)
-                .topThickness(self._topThickness)
-                .wallThickness(self._wallThickness)
+                .stepped(self._stepType, self._raisedWidth, self._stepHeight)
+                .top_diff(self._topDiff)
+                .top_fillet(self._topFillet)
+                .top_rect_fillet(self._topRectFillet)
+                .top_thickness(self._topThickness)
+                .wall_thickness(self._wallThickness)
                 .width(self._width)
                 )
 
@@ -800,7 +789,7 @@ class QSC(object):
 
     def _rotate(self, w):
         return (w.rotate((0, 0, 0), (0, 0, 1), -self._stemRotation)
-                .rotate((0, 0, 0), (1, 0, 0), 105)#-257)
+                .rotate((0, 0, 0), (1, 0, 0), 105)
                 )
 
     def _printSettings(self):

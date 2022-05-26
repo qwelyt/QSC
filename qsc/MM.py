@@ -1,11 +1,12 @@
 from __future__ import annotations
+from .types import Real
 from .Constants import Constants
 
 
 class MM(object):
-    _mm = 0
+    _mm: Real = 0
 
-    def __init__(self, mm: float):
+    def __init__(self, mm: Real):
         self._mm = mm
 
     def __str__(self):
@@ -21,5 +22,5 @@ class MM(object):
     def mm(self) -> MM:
         return self
 
-    def get(self) -> float:
+    def get(self) -> Real:
         return self._mm

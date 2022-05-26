@@ -45,7 +45,7 @@ class QSCTest(unittest.TestCase):
 
     def test_unable_to_fillet_error(self):
         with self.assertRaises(ValueError):
-            QSC().row(1).topFillet(30).dishThickness(3).build()
+            QSC().row(1).top_fillet(30).dish_thickness(3).build()
 
     def test_all_types_same_width(self):
         def bb(cap):

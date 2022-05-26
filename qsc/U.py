@@ -1,11 +1,12 @@
 from __future__ import annotations
+from .types import Real
 from .Constants import Constants
 
 
 class U(object):
-    _u = 0
+    _u: Real = 0
 
-    def __init__(self, u):
+    def __init__(self, u: Real):
         self._u = u
 
     def __str__(self):
@@ -21,5 +22,5 @@ class U(object):
         from .MM import MM
         return MM(self._u * Constants.U_IN_MM)
 
-    def get(self) -> float:
+    def get(self) -> Real:
         return self._u
