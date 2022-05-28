@@ -1,4 +1,4 @@
-#
+
 
 class Percentage(object):
     _percentage = 0
@@ -11,3 +11,6 @@ class Percentage(object):
 
     def apply(self, mm: float) -> float:
         return mm * self._percentage
+
+    def get(self) -> float:
+        return self._percentage

@@ -13,6 +13,9 @@ from .MM import MM
 from .stem import StemType, StemSettings, CherrySettings, Stem
 from .StepType import StepType
 from .U import U
+from .base import Base, BaseSettings
+from .StepSettings import StepSettings
+from .RoundingType import RoundingType
 
 T = TypeVar("T", bound="QSC")
 
@@ -68,13 +71,14 @@ class QSC(object):
         3: 0,
         4: -10
     }
-    _stabs = True
+    _raisedWidth = 0
     _specialStabPlacement = None
+    _stabs = True
     _stemSettings = CherrySettings()
     _step = 10
-    _stepType = None
+    _stepFillet = 0.6
     _stepHeight = None
-    _raisedWidth = 0
+    _stepType = None
     _topDiff = MM(-7).get()
     _topFillet = 0.6
     _topRectFillet = 2
@@ -268,50 +272,23 @@ class QSC(object):
         t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, combine='a', cut=False)
         return c, t
 
-    def _stepped_base(self):
-        l = self._length.mm().get()
-        w = self._width.mm().get()
-        step_height = self._height / 2 if self._stepHeight is None else self._stepHeight.mm().get()
-        raised = self._box(self._raisedWidth, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-        step = self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-        step = (step.faces(">Z")
-                .sketch()
-                .rect(w, l)
-                .finalize()
-                .extrude(-(self._height - step_height), "cut")
-                )
-        stepWidth = w - self._raisedWidth
-
-        if self._stepType == StepType.LEFT:
-            return (raised.translate((-stepWidth / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        elif self._stepType == StepType.RIGHT:
-            return (raised.translate((stepWidth / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        else:  # self._stepType == StepType.CENTER:
-            return step.add(raised).combine()
-
     def _base(self):
-        l = self._length.mm().get()
-        w = self._width.mm().get()
-        if self._isoEnter and self._stepType is not None:
-            w6 = w / 6
-            lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(w, l / 2, self._height / 2, self._topDiff / 2, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
-        elif self._isoEnter:
-            w6 = w / 6
-            lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(w, l / 2, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
-        elif self._stepType:
-            return self._stepped_base()
-        else:
-            return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+        return Base((BaseSettings()
+                     .width(self._width.mm().get())
+                     .length(self._length.mm().get())
+                     .height(MM(self._height).mm().get())
+                     .diff(self._topDiff)
+                     .top_rounding(self._topRectFillet, RoundingType.FILLET)
+                     .bottom_rounding(self._bottomRectFillet, RoundingType.FILLET)
+                     .iso_enter(self._isoEnter)
+                     .step_settings((StepSettings()
+                                     .step_type(self._stepType)
+                                     .raised_width(self._raisedWidth)
+                                     .step_height(self._stepHeight)
+                                     )
+                                    )
+                     )
+                    ).build()
 
     def _stepped_hollow(self):
         l = self._length.mm().get() - (self._wallThickness * 2)
@@ -345,6 +322,26 @@ class QSC(object):
             return step.add(raised).combine()
 
     def _hollow(self):
+        ih = (MM(self._height).mm().get() - self._topThickness)
+        diff = Percentage(ih / self._height).apply(self._topDiff)
+        step_height = self._stepHeight
+        if type(step_height) == MM:
+            step_height = MM(step_height.get() - self._topThickness)
+
+        return Base((BaseSettings()
+                     .width(self._width.mm().get() - self._wallThickness * 2)
+                     .length(self._length.mm().get() - self._wallThickness * 2)
+                     .height(ih)
+                     .diff(diff)
+                     .iso_enter(self._isoEnter, Percentage((U(1).mm().get() - self._wallThickness) / U(2).mm().get()))
+                     .step_settings((StepSettings()
+                                     .step_type(self._stepType)
+                                     .raised_width(self._raisedWidth - self._wallThickness * 2)
+                                     .step_height(step_height)
+                                     )
+                                    )
+                     )
+                    ).build()
         il = self._length.mm().get() - (self._wallThickness * 2)
         iw = self._width.mm().get() - (self._wallThickness * 2)
         if self._isoEnter and self._stepType:
@@ -552,7 +549,7 @@ class QSC(object):
         self._inverted = inverted
         return self
 
-    def stepped(self, step_type: StepType = StepType.LEFT, raised_width: Percentage | U | MM = None, step_height: MM = None) -> T:
+    def stepped(self, step_type: StepType = StepType.LEFT, raised_width: Percentage | U | MM = None, step_height: MM | Percentage = None) -> T:
         self._stepType = step_type
         self._stepHeight = step_height
         if self._isoEnter:
@@ -581,6 +578,7 @@ class QSC(object):
         self._isoEnter = iso
         self.width(U(1.5))
         self.length(U(2))
+        self.step_fillet(0.221)
         return self.stem_settings(self._stemSettings.rotation(90).offset((0, 0, 0)))
 
     def top_rect_fillet(self, value: Real) -> T:
@@ -593,6 +591,10 @@ class QSC(object):
 
     def top_fillet(self, value: Real) -> T:
         self._topFillet = value
+        return self
+
+    def step_fillet(self, value: Real) -> T:
+        self._stepFillet = value
         return self
 
     def bottom_fillet(self, value: Real) -> T:
@@ -685,46 +687,42 @@ class QSC(object):
         iterfillet = shape.maxFillet(shape.Edges(), 0.001, 1000)
         return iterfillet
 
+    def _apply_fillet(self, cap, fillet: Real, var: str):
+        try:
+            cap = cap.faces(">Z").fillet(fillet)
+        except StdFail_NotDone:
+            self._printSettings()
+            raise ValueError(var + " too big",
+                             "Your top fillet setting [" + str(fillet) + "] is too big for the current shape (r" + str(self._row)
+                             + ", " + str(self._width.u().get()) + "x" + str(self._length.u().get())
+                             + "). Try reducing it.")
+        except Exception:
+            self._printSettings()
+            raise
+        return cap
+
     def _fillet(self, cap):
         # maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.001, 100)
         # print("hoho", maxTop)
         # maxStep = 0
         # debug(cap.edges())
+        if self._stepType:
+            if self._stepFillet > 0:
+                # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
+                selector = {
+                    1: ">Z[1]",
+                    2: ">Z[1]",
+                    3: ">Z[1]",
+                    4: ">Z[1]",
+                }.get(self._row)
+                cap = self._apply_fillet(cap.faces(selector), self._stepFillet, "Step fillet")
+
         if self._topFillet > 0:
-            try:
-                if self._stepType:
-                    # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
-                    selector = {
-                        1: ">Z[1]",
-                        2: ">Z[1]",
-                        3: ">Z[1]",
-                        4: ">Z[1]",
-                    }.get(self._row)
-                    cap = cap.faces(selector).fillet(self._topFillet)
-                # print("Top:",maxTop, "Step:",maxStep)
-                cap = cap.faces(">Z").fillet(self._topFillet)
-            except StdFail_NotDone:
-                self._printSettings()
-                raise ValueError("Top fillet too big",
-                                 "Your top fillet setting [" + str(self._topFillet) + "] is too big for the current shape (r" + str(self._row)
-                                 + ", " + str(self._width.u().get()) + "x" + str(self._length.u().get())
-                                 + "). Try reducing it.")
-            except Exception:
-                self._printSettings()
-                raise
+            # print("Top:",maxTop, "Step:",maxStep)
+            cap = self._apply_fillet(cap.faces(">Z"), self._topFillet, "Top fillet")
 
         if self._bottomFillet > 0:
-            try:
-                cap = cap.edges("<Z").fillet(self._bottomFillet)
-            except StdFail_NotDone:
-                self._printSettings()
-                raise ValueError("Bottom fillet too big",
-                                 "Your bottom fillet setting [" + str(self._bottomFillet) + "] is too big for the current shape (r" + str(self._row)
-                                 + ", " + str(self._width.u().get()) + "x" + str(self._length)
-                                 + "). Try reducing it.")
-            except Exception:
-                self._printSettings()
-                raise
+            cap = self._apply_fillet(cap.faces("<Z"), self._bottomFillet, "Bottom fillet")
 
         return cap
 
@@ -794,3 +792,10 @@ class QSC(object):
 
     def _printSettings(self):
         print(self.__dict__)
+
+    def test(self):
+        # return QSC().width(U(2)).length(U(1)).stepped()._base()
+        # return QSC().iso_enter().stepped()._base()
+        # return QSC().stepped()._base(), QSC().stepped()._hollow()
+        q = QSC().step(9).top_fillet(0).iso_enter()
+        return q.build()  # , q._createDish(True)
