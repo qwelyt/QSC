@@ -50,14 +50,15 @@ class QSCTest(unittest.TestCase):
     def test_all_types_same_width(self):
         def bb(cap):
             return cap.findSolid().BoundingBox()
-        for row in [1,2,3,4]:
-            for width in [1,2,3,6.25,7]:
+
+        for row in [1, 2, 3, 4]:
+            for width in [1, 2, 3, 6.25, 7]:
                 qsc = QSC().row(row).width(U(width))
                 s = qsc.clone().stepped()
                 i = qsc.clone().inverted()
-                normal,_ = qsc.build()
-                stepped,_ = s.build()
-                inverted,_ = i.build()
+                normal, _ = qsc.build()
+                stepped, _ = s.build()
+                inverted, _ = i.build()
 
                 nBB = bb(normal)
                 sBB = bb(stepped)
@@ -65,27 +66,27 @@ class QSCTest(unittest.TestCase):
 
                 delta = 0.05
 
-                self.assertAlmostEqual(nBB.xlen, sBB.xlen, None, "r"+str(row)+" w"+str(width), delta)
-                self.assertAlmostEqual(nBB.xlen, iBB.xlen, None, "r"+str(row)+" w"+str(width), delta)
-                self.assertAlmostEqual(sBB.xlen, iBB.xlen, None, "r"+str(row)+" w"+str(width), delta)
+                self.assertAlmostEqual(nBB.xlen, sBB.xlen, None, "r" + str(row) + " w" + str(width), delta)
+                self.assertAlmostEqual(nBB.xlen, iBB.xlen, None, "r" + str(row) + " w" + str(width), delta)
+                self.assertAlmostEqual(sBB.xlen, iBB.xlen, None, "r" + str(row) + " w" + str(width), delta)
 
-                self.assertAlmostEqual(nBB.ylen, sBB.ylen, None, "r"+str(row)+" w"+str(width), delta)
-                self.assertAlmostEqual(nBB.ylen, iBB.ylen, None, "r"+str(row)+" w"+str(width), delta)
-                self.assertAlmostEqual(sBB.ylen, iBB.ylen, None, "r"+str(row)+" w"+str(width), delta)
+                self.assertAlmostEqual(nBB.ylen, sBB.ylen, None, "r" + str(row) + " w" + str(width), delta)
+                self.assertAlmostEqual(nBB.ylen, iBB.ylen, None, "r" + str(row) + " w" + str(width), delta)
+                self.assertAlmostEqual(sBB.ylen, iBB.ylen, None, "r" + str(row) + " w" + str(width), delta)
 
     def _can_build_row(self, row, width):
         qsc = QSC().row(row).width(width)
-        #self.assertTrue(qsc.isValid())
+        # self.assertTrue(qsc.isValid())
         self.assertIsNotNone(qsc.build())
 
     def _can_build_inverted_row(self, row, width):
         qsc = QSC().row(row).width(width).inverted()
-        #self.assertTrue(qsc.isValid())
+        # self.assertTrue(qsc.isValid())
         self.assertIsNotNone(qsc.build())
 
     def _can_build_stepped_row(self, row, width):
         qsc = QSC().row(row).width(width).stepped()
-        #self.assertTrue(qsc.isValid())
+        # self.assertTrue(qsc.isValid())
         self.assertIsNotNone(qsc.build())
 
 

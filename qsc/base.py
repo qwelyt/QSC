@@ -1,11 +1,11 @@
 import cadquery as cq
-from .types import Real
-from .StepSettings import StepSettings
-from .StepType import StepType
-from .MM import MM
-from .U import U
-from .Percentage import Percentage
-from .RoundingType import RoundingType
+from qsc.types import Real
+from qsc.step_settings import StepSettings
+from qsc.step_type import StepType
+from qsc.mm import MM
+from qsc.u import U
+from qsc.percentage import Percentage
+from qsc.rounding_type import RoundingType
 
 
 class BaseSettings(object):
@@ -44,7 +44,7 @@ class BaseSettings(object):
         self._diff = diff
         return self
 
-    def iso_enter(self, iso_enter: bool, shoulder_length: Percentage | MM | U = Percentage(0.5)):
+    def iso_enter(self, iso_enter: bool, shoulder_length: "Percentage | MM | U" = Percentage(0.5)):
         self._isoEnter = iso_enter
         self._shoulderLength = shoulder_length
         return self

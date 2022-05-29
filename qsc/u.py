@@ -1,6 +1,6 @@
 from __future__ import annotations
-from .types import Real
-from .Constants import Constants
+from qsc.types import Real
+from qsc.constants import Constants
 
 
 class U(object):
@@ -10,7 +10,7 @@ class U(object):
         self._u = u
 
     def __str__(self):
-        return str(self._u)+"u"
+        return str(self._u) + "u"
 
     def __repr__(self):
         return f'U(u={self._u})'
@@ -19,7 +19,7 @@ class U(object):
         return self
 
     def mm(self) -> MM:
-        from .MM import MM
+        from .mm import MM
         return MM(self._u * Constants.U_IN_MM)
 
     def get(self) -> Real:

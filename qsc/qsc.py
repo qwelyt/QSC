@@ -5,17 +5,23 @@ from typing import Tuple, Iterable, TypeVar
 import cadquery as cq
 from OCP.StdFail import StdFail_NotDone
 
-from .types import Real
-from .Percentage import Percentage
-from .Constants import Constants
-from .HomingType import HomingType
-from .MM import MM
-from .stem import StemType, StemSettings, CherrySettings, Stem
-from .StepType import StepType
-from .U import U
-from .base import Base, BaseSettings
-from .StepSettings import StepSettings
-from .RoundingType import RoundingType
+from qsc.types import Real
+from qsc import (
+    Percentage,
+    Constants,
+    MM,
+    U,
+    StemType,
+    HomingType,
+    RoundingType,
+    StepType,
+    StepSettings,
+    CherrySettings,
+    StemSettings,
+    StemType,
+    Stem,
+)
+from qsc.base import Base, BaseSettings
 
 T = TypeVar("T", bound="QSC")
 
@@ -797,5 +803,8 @@ class QSC(object):
         # return QSC().width(U(2)).length(U(1)).stepped()._base()
         # return QSC().iso_enter().stepped()._base()
         # return QSC().stepped()._base(), QSC().stepped()._hollow()
-        q = QSC().step(9).top_fillet(0).iso_enter()
-        return q.build()  # , q._createDish(True)
+        q = QSC().step(2).top_fillet(0).inverted().iso_enter()
+        return q._base(), q._dish(q._base())
+
+# t = QSC().test()
+# show_object(t[0])

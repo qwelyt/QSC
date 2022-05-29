@@ -1,15 +1,14 @@
 from typing import TypeVar
 
-from .StemSettings import StemSettings
-from .StemType import StemType
-from ..MM import MM
-from ..types import Real
+from qsc.mm import MM
+from qsc.types import Real
+from qsc.stem.stem_settings import StemSettings
+from qsc.stem.stem_type import StemType
 
 T = TypeVar("T", bound="CherrySettings")
 
 
 class CherrySettings(StemSettings):
-    _type = StemType.CHERRY
     _radius: MM = MM(5.6 / 2)
 
     def __init__(self):
@@ -26,8 +25,8 @@ class CherrySettings(StemSettings):
         self._radius = radius
         return self
 
-    def get_type(self):
-        return self._type
+    def get_type(self) -> StemType:
+        return StemType.CHERRY
 
     def get_radius(self) -> Real:
         return self._radius.get()

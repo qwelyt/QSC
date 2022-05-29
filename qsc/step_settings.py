@@ -1,27 +1,29 @@
-from .MM import MM
-from .U import U
-from .Percentage import Percentage
-from .StepType import StepType
+from qsc.step_type import StepType
+from qsc.mm import MM
+from qsc.percentage import Percentage
+from qsc.u import U
+
+ValueTypes = "MM | U | Percentage"
 
 
 class StepSettings(object):
     _stepType: StepType
-    _stepHeight: MM | Percentage = Percentage(0.5)
-    _raisedWidth: Percentage | U | MM
+    _stepHeight: ValueTypes
+    _raisedWidth: ValueTypes
 
     def __init__(self):
-        pass
+        self._stepHeight = Percentage(0.5)
 
     def step_type(self, step_type: StepType):
         self._stepType = step_type
         return self
 
-    def step_height(self, step_height: MM | Percentage):
+    def step_height(self, step_height: ValueTypes):
         if step_height is not None:
             self._stepHeight = step_height
         return self
 
-    def raised_width(self, raised_width: MM | U | Percentage):
+    def raised_width(self, raised_width: ValueTypes):
         self._raisedWidth = raised_width
         return self
 
@@ -36,6 +38,8 @@ class StepSettings(object):
 
     def apply_step_height(self, height) -> float:
         if type(self._stepHeight) is MM:
+            return self._stepHeight.mm().get()
+        elif type(self._stepHeight) is U:
             return self._stepHeight.mm().get()
         elif type(self._stepHeight) is Percentage:
             return self._stepHeight.apply(height)

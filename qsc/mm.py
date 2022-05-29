@@ -1,6 +1,7 @@
 from __future__ import annotations
-from .types import Real
-from .Constants import Constants
+
+from qsc.types import Real
+from qsc.constants import Constants
 
 
 class MM(object):
@@ -16,7 +17,7 @@ class MM(object):
         return f'MM(mm={self._mm})'
 
     def u(self) -> U:
-        from U import U
+        from u import U
         return U(self._mm / Constants.U_IN_MM)
 
     def mm(self) -> MM:

@@ -1,4 +1,4 @@
-from .Percentage import Percentage
+from qsc.percentage import Percentage
 
 
 class Constants:

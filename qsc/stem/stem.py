@@ -1,8 +1,8 @@
 from cadquery import Sketch
 
-from .CherrySettings import CherrySettings
-from .StemSettings import StemSettings
-from .StemType import StemType
+from qsc.stem.stem_settings import StemSettings
+from qsc.stem.cherry_settings import CherrySettings
+from qsc.stem.stem_type import StemType
 
 
 class Stem(object):

@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import TypeVar, Tuple
 
-from ..MM import MM
-from ..types import Real
-
-from .StemType import StemType
+from qsc.mm import MM
+from qsc.types import Real
+from qsc.stem.stem_type import StemType
 
 T = TypeVar("T", bound="Settings")
 
