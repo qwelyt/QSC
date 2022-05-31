@@ -89,7 +89,7 @@ class QSC(object):
     _topDiff = MM(-7).get()
     _topFillet = 0.5
     _topRectFillet = 2
-    _topThickness = MM(3).get()
+    _topThickness = MM(4).get()
     _wallThickness = MM(2).get()
     _width = U(1)
 
@@ -761,15 +761,17 @@ class QSC(object):
                     show_object(c[1], options={"color": (90, 200, 40)})
         return self
 
-    def exportSTL(self):
+    def exportSTL(self, tolerance=0.05, angularTolerance=0.05):
         c = self.build()
-        cq.exporters.export(self._rotate(c[0]), self.name() + ".stl")
+        cq.exporters.export(self._rotate(c[0]), self.name() + ".stl",tolerance=tolerance, angularTolerance=angularTolerance)
+        print("Cap exported")
         if self._legend is not None:
-            cq.exporters.export(self._rotate(c[1]), self.name() + "_LEGEND" + ".stl", tolerance=0.001, angularTolerance=0.001)
+            cq.exporters.export(self._rotate(c[1]), self.name() + "_LEGEND" + ".stl", tolerance=tolerance, angularTolerance=angularTolerance)
+            print("Legend exported")
         return self
 
     def _rotate(self, w):
-        return (w.rotate((0, 0, 0), (0, 0, 1), -self._stemRotation)
+        return (w.rotate((0, 0, 0), (0, 0, 1), -self._stemSettings.get_rotation())
                 .rotate((0, 0, 0), (1, 0, 0), 105)
                 )
 
