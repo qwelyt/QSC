@@ -59,7 +59,7 @@ cq.Shape.maxFillet = _maxFillet
 
 
 class QSC(object):
-    _bottomFillet = 0.6
+    _bottomFillet = 0.5
     _bottomRectFillet = 1
     _debug = False
     _dishThickness = MM(1.8).get()
@@ -69,6 +69,7 @@ class QSC(object):
     _inverted = False
     _isoEnter = False
     _legend = None
+    _legendFaceSelection = None
     _length = U(1)
     _row = 3
     _rowAngle = {
@@ -86,10 +87,10 @@ class QSC(object):
     _stepHeight = None
     _stepType = None
     _topDiff = MM(-7).get()
-    _topFillet = 0.6
+    _topFillet = 0.5
     _topRectFillet = 2
     _topThickness = MM(3).get()
-    _wallThickness = MM(1.5).get()
+    _wallThickness = MM(2).get()
     _width = U(1)
 
     _font = "Arial"
@@ -240,42 +241,23 @@ class QSC(object):
 
         return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), rotation))
 
-    def _addLegend(self, cap):
+    def _addLegend(self, cap, dished):
         if self._legend is None:
             return cap, None
         sideSelector = {
-            1: {
-                0: ">>Y[3]",
-                90: "<<X[2]",
-                180: "<<Y[2]",
-                270: ">>X[3]"
-            },
-            2: {
-                0: ">>Y[3]",
-                90: "<<X[2]",
-                180: "<<Y[2]",
-                270: ">>X[3]"
-            },
-            3: {
-                0: ">>Y[3]",
-                90: "<<X[2]",
-                180: "<<Y[2]",
-                270: ">>X[3]"
-            },
-            4: {
-                0: ">>Y[3]",
-                90: "<<X[2]",
-                180: "<<Y[2]",
-                270: ">>X[3]"
-            }
-        }.get(self._row).get(self._stemSettings.get_rotation())
-        # show_object(cap.faces(sideSelector))
-        nc = (cap.faces(sideSelector)
-              .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
-              )
-        nw = cq.Workplane().copyWorkplane(nc)
-        c = nc.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font)
-        t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, combine='a', cut=False)
+            0: "<Y",
+            90: ">X",
+            180: ">Y",
+            270: "<X"
+        }.get(self._stemSettings.get_rotation()) if self._legendFaceSelection is None else self._legendFaceSelection
+        base = (dished.faces(sideSelector)
+                .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
+                .center(0, self._bottomFillet)
+                )
+        nc = cq.Workplane().add(cap).copyWorkplane(base)
+        nw = cq.Workplane().add(cap).copyWorkplane(nc)
+        c = nc.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, valign="center", combine="cut")
+        t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, valign="center", combine='a', cut=False)
         return c, t
 
     def _base(self):
@@ -496,11 +478,12 @@ class QSC(object):
         self._height = height
         return self
 
-    def legend(self, legend: str, font_size: Real = -1, first_layer_height: Real = 1.2, font: str = "Arial") -> T:
+    def legend(self, legend: str, font_size: Real = -1, first_layer_height: Real = 1.2, font: str = "Arial", face_selection: str = None) -> T:
         self._legend = legend
         self._fontSize = self._height if font_size == -1 else font_size
         self._firstLayerHeight = first_layer_height
         self._font = font
+        self._legendFaceSelection = face_selection
         return self
 
     def top_diff(self, diff: Real) -> T:
@@ -732,13 +715,13 @@ class QSC(object):
 
     def build(self):
         self._pre_checks()
-        cap = self._base().tag("base")
-        cap = self._dish(cap) if self._step > 1 else cap
-        cap = self._fillet(cap) if self._step > 2 else cap
+        base = self._base().tag("base")
+        dished = self._dish(base) if self._step > 1 else base
+        cap = self._fillet(dished) if self._step > 2 else dished
         cap = self._homing(cap) if self._step > 3 else cap
         cap = cap.cut(self._hollow()) if self._step > 4 else cap
         cap = self._stemAndSupport(cap) if self._step > 5 else cap
-        cap, legend = self._addLegend(cap) if self._step > 6 else (cap, None)
+        cap, legend = self._addLegend(cap, dished) if self._step > 6 else (cap, None)
 
         if self._legend is not None:
             return (
@@ -782,7 +765,7 @@ class QSC(object):
         c = self.build()
         cq.exporters.export(self._rotate(c[0]), self.name() + ".stl")
         if self._legend is not None:
-            cq.exporters.export(self._rotate(c[1]), self.name() + "_LEGEND" + ".stl")
+            cq.exporters.export(self._rotate(c[1]), self.name() + "_LEGEND" + ".stl", tolerance=0.001, angularTolerance=0.001)
         return self
 
     def _rotate(self, w):
@@ -792,13 +775,3 @@ class QSC(object):
 
     def _printSettings(self):
         print(self.__dict__)
-
-    def test(self):
-        # return QSC().width(U(2)).length(U(1)).stepped()._base()
-        # return QSC().iso_enter().stepped()._base()
-        # return QSC().stepped()._base(), QSC().stepped()._hollow()
-        q = QSC().step(2).top_fillet(0).inverted().iso_enter()
-        return q._base(), q._dish(q._base())
-
-# t = QSC().test()
-# show_object(t[0])
