@@ -20,6 +20,8 @@ from qsc import (
     StemSettings,
     StemType,
     Stem,
+    Legend,
+    LegendSettings
 )
 from qsc.base import Base, BaseSettings
 
@@ -110,14 +112,6 @@ class QSC(object):
             return rect.vertices().fillet(delta)
         else:
             return rect
-
-    def _box(self, width: Real, depth: Real, height: Real, diff: Real = 0.0, delta_a: Real = 9.0, delta_b: Real = 4.0, op: str = "chamfer"):
-        a = self._srect(width, depth, delta_a, op)
-        b = self._srect(width + diff, depth + diff, delta_b, op)
-        return (cq.Workplane("XY")
-                .placeSketch(a, b.moved(cq.Location(cq.Vector(0, 0, height))))
-                .loft()
-                )
 
     def _stem(self):
         stemHeight = self._height - self._topThickness
@@ -242,23 +236,21 @@ class QSC(object):
         return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), rotation))
 
     def _addLegend(self, cap, dished):
-        if self._legend is None:
-            return cap, None
-        sideSelector = {
+        side = {
             0: "<Y",
             90: ">X",
             180: ">Y",
             270: "<X"
         }.get(self._stemSettings.get_rotation()) if self._legendFaceSelection is None else self._legendFaceSelection
-        base = (dished.faces(sideSelector)
-                .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
-                .center(0, self._bottomFillet)
-                )
-        nc = cq.Workplane().add(cap).copyWorkplane(base)
-        nw = cq.Workplane().add(cap).copyWorkplane(nc)
-        c = nc.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, valign="center", combine="cut")
-        t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, valign="center", combine='a', cut=False)
-        return c, t
+        settings = (LegendSettings()
+                    .distance(self._firstLayerHeight)
+                    .font(self._font)
+                    .font_size(self._fontSize)
+                    .legend(self._legend)
+                    .side(side)
+                    .y_pos(self._bottomFillet)
+                    )
+        return Legend(settings).apply_legend(cap, dished)
 
     def _base(self):
         return Base((BaseSettings()
@@ -277,37 +269,6 @@ class QSC(object):
                                     )
                      )
                     ).build()
-
-    def _stepped_hollow(self):
-        l = self._length.mm().get() - (self._wallThickness * 2)
-        w = self._width.mm().get() - (self._wallThickness * 2)
-        height = self._height - self._topThickness
-        step_height = self._height / 2 if self._stepHeight is None else self._stepHeight.mm().get()
-        step_height = step_height - 2
-        raised_width = self._raisedWidth - (self._wallThickness * 2)
-        raised = self._box(raised_width, l, height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-        step = self._box(w, l, height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-        step_cut = height - step_height
-        step = (step.faces(">Z")
-                .sketch()
-                .rect(w, l)
-                .finalize()
-                .extrude(-step_cut, "cut")
-                )
-        step_width = w - raised_width
-
-        if self._stepType == StepType.LEFT:
-            return (raised.translate((-step_width / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        elif self._stepType == StepType.RIGHT:
-            return (raised.translate((step_width / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        else:  # self._stepType == StepType.CENTER:
-            return step.add(raised).combine()
 
     def _hollow(self):
         ih = (MM(self._height).mm().get() - self._topThickness)
@@ -330,31 +291,6 @@ class QSC(object):
                                     )
                      )
                     ).build()
-        il = self._length.mm().get() - (self._wallThickness * 2)
-        iw = self._width.mm().get() - (self._wallThickness * 2)
-        if self._isoEnter and self._stepType:
-            ih = self._height - self._topThickness
-            il2 = U(1).mm().get() - (self._wallThickness * 2)
-            w = self._width.mm().get()
-            w6 = w / 6
-            iw2 = iw - w6
-            lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(iw, il2, ih / 2, self._topDiff / 2, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
-        elif self._stepType:
-            return self._stepped_hollow()
-        elif self._isoEnter:
-            ih = self._height - self._topThickness
-            il2 = U(1).mm().get() - (self._wallThickness * 2)
-            w = self._width.mm().get()
-            w6 = w / 6
-            iw2 = iw - w6
-            lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(iw, il2, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
-        else:
-            ih = self._height - self._topThickness
-            return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
 
     def _createDish(self, inverted):
         isoOrNot = U(2).mm().get() if self._isoEnter else self._width.mm().get()
@@ -723,7 +659,7 @@ class QSC(object):
         cap = self._stemAndSupport(cap) if self._step > 5 else cap
         cap, legend = self._addLegend(cap, dished) if self._step > 6 else (cap, None)
 
-        if self._legend is not None:
+        if legend is not None:
             return (
                 cap.translate((0, 0, -self._height / 2)),
                 legend.translate((0, 0, -self._height / 2)) if legend is not None else None
@@ -763,7 +699,7 @@ class QSC(object):
 
     def exportSTL(self, tolerance=0.05, angularTolerance=0.05):
         c = self.build()
-        cq.exporters.export(self._rotate(c[0]), self.name() + ".stl",tolerance=tolerance, angularTolerance=angularTolerance)
+        cq.exporters.export(self._rotate(c[0]), self.name() + ".stl", tolerance=tolerance, angularTolerance=angularTolerance)
         print("Cap exported")
         if self._legend is not None:
             cq.exporters.export(self._rotate(c[1]), self.name() + "_LEGEND" + ".stl", tolerance=tolerance, angularTolerance=angularTolerance)

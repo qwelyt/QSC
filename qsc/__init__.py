@@ -8,12 +8,15 @@ from .stem import (
     Stem,
     StemType,
 )
+from .legend import (
+    Legend,
+    LegendSettings
+)
 from .rounding_type import RoundingType
 from .step_settings import StepSettings
 from .step_type import StepType
 from .u import U
 from .qsc import QSC
-from .stem import Stem
 
 __all__ = {
     "Percentage",
@@ -29,6 +32,8 @@ __all__ = {
     "StepSettings",
     "U",
     "Stem",
+    "Legend",
+    "LegendSettings",
 }
 
 __version__ = 0.1
