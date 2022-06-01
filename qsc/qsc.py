@@ -21,7 +21,8 @@ from qsc import (
     StemType,
     Stem,
     Legend,
-    LegendSettings
+    LegendSettings,
+    Dish,
 )
 from qsc.base import Base, BaseSettings
 
@@ -235,7 +236,7 @@ class QSC(object):
 
         return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), rotation))
 
-    def _addLegend(self, cap, dished):
+    def _add_legend(self, cap, dished):
         side = {
             0: "<Y",
             90: ">X",
@@ -292,74 +293,15 @@ class QSC(object):
                      )
                     ).build()
 
-    def _createDish(self, inverted):
-        isoOrNot = U(2).mm().get() if self._isoEnter else self._width.mm().get()
-        w = isoOrNot - self._topDiff * -1 / 1.2
-        l = self._length.mm().get() - self._topDiff * -1 / 1.2
-        dd_orig = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
-        row_adjustments = {
-            # (extra DD, extraDDinverted, translateY, translateZInverted, rotation)
-            1: (2.0, 2.0, -1.0, -4.1, self._rowAngle.get(1)),
-            2: (2.0, 2.0, -1.2, -3.1, self._rowAngle.get(2)),
-            3: (0.0, 0.0, 0.0, -1.8, self._rowAngle.get(3)),
-            4: (0.4, 1.55, 1.2, -3.1, self._rowAngle.get(4)),
-        }.get(self._row)
-        dd = dd_orig + row_adjustments[0]
-        dd = dd + row_adjustments[1] if inverted else dd
-        s_x, s_y = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness
-        s_z = 1.5 if self._homingType == HomingType.SCOOPED else 1.0
-        scale_matrix = cq.Matrix(
-            [
-                [s_x, 0.0, 0.0, 0.0],
-                [0.0, s_y, 0.0, 0.0],
-                [0.0, 0.0, s_z, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]
-        )
-        scaled_sphere = (cq.Solid
-                         .makeSphere(self._dishThickness, angleDegrees1=-90)
-                         .transformGeometry(scale_matrix)
-                         )
-
-        # show_object(scaled_sphere, options={"color":(255,0,0), "alpha":0.5})
-        # show_object(scaled_sphere2, options={"color":(0,255,0), "alpha":0.5})
-
-        if inverted:
-            top = (cq.Workplane().add(scaled_sphere).split(keepTop=True))
-            ylen = top.findSolid().BoundingBox().ylen
-            bh = self._height - top.findSolid().BoundingBox().zlen + 0.1
-            b = (cq.Solid.makeCone(dd_orig / 2 + abs(self._topDiff) / 2 + 1, ylen / 2, bh).moved(cq.Location((cq.Vector(0, 0, -bh + 0.1)))))
-            return (cq.Workplane("XY")
-                    .add(top)
-                    .union(b)
-                    .translate((0, row_adjustments[2], row_adjustments[3]))
-                    .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
-                    )
-        else:
-            bottom = (cq.Workplane().add(scaled_sphere).split(keepBottom=True))
-            p = (cq.Solid.extrudeLinear(bottom.faces(">Z").val(), cq.Vector(0, 0, dd)))
-            return (cq.Workplane("XY")
-                    .add(bottom)
-                    .union(p)
-                    .translate((0, row_adjustments[2], -1))
-                    .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
-                    )
-
     def _dish(self, cap):
-        dish = self._createDish(self._inverted)
-        capBB = cap.findSolid().BoundingBox()
-        h = capBB.zmax
-        if self._inverted:
-            intersection = cap.intersect(dish.translate((0, 0, h)))
-            bottom = cap.split(keepBottom=True)
-            return intersection.union(bottom)
-        else:
-            # debug(dish)
-            cap = cap.cut(dish.translate((0, 0, h)))
-            if self._debug:
-                show_object(dish.translate((0, 0, h)), options={"color": (255, 255, 255), "alpha": 0.3})
-
-        return cap
+        return (Dish()
+                .dish_thickness(self._dishThickness)
+                .extra_thick(self._homingType == HomingType.SCOOPED)
+                .cap_height(self._height)
+                .inverted(self._inverted)
+                .row(self._row)
+                .row_angle(self._rowAngle)
+                ).dish(cap)
 
     def _homing(self, cap):
         if self._homingType is None or self._homingType is HomingType.SCOOPED:
@@ -657,7 +599,7 @@ class QSC(object):
         cap = self._homing(cap) if self._step > 3 else cap
         cap = cap.cut(self._hollow()) if self._step > 4 else cap
         cap = self._stemAndSupport(cap) if self._step > 5 else cap
-        cap, legend = self._addLegend(cap, dished) if self._step > 6 else (cap, None)
+        cap, legend = self._add_legend(cap, dished) if self._step > 6 else (cap, None)
 
         if legend is not None:
             return (
