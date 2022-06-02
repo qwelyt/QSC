@@ -13,6 +13,7 @@ from .legend import (
     LegendSettings
 )
 from .dish import Dish
+from .homing import Homing
 from .rounding_type import RoundingType
 from .step_settings import StepSettings
 from .step_type import StepType
@@ -36,6 +37,7 @@ __all__ = {
     "Legend",
     "LegendSettings",
     "Dish",
+    "Homing",
 }
 
 __version__ = 0.1

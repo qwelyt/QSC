@@ -12,6 +12,7 @@ from qsc import (
     MM,
     U,
     StemType,
+    Homing,
     HomingType,
     RoundingType,
     StepType,
@@ -304,37 +305,7 @@ class QSC(object):
                 ).dish(cap)
 
     def _homing(self, cap):
-        if self._homingType is None or self._homingType is HomingType.SCOOPED:
-            return cap
-        capBB = cap.findSolid().BoundingBox()
-        l = capBB.ylen / 2 if self._homingType == HomingType.BAR else 1
-        placer = cq.Workplane().rect(0.1, l).extrude(capBB.zlen)
-        intersection = cap.intersect(placer)
-        iBB = intersection.faces("<Y").val().BoundingBox()
-
-        if self._homingType == HomingType.BAR:
-            barSize = 1
-            bar = (cq.Workplane("XY")
-                   .sketch()
-                   .rect(capBB.xlen / 3, barSize)
-                   .vertices()
-                   .fillet(barSize / 2)
-                   .finalize()
-                   .extrude(1)
-                   .faces(">Z")
-                   .fillet(barSize / 2)
-                   )
-            b = bar.translate((0, iBB.ymin, iBB.zlen - barSize / 1.5))
-            return cap.add(b)
-        elif self._homingType == HomingType.DOT:
-            dotSize = 1
-            dot = (cq.Workplane()
-                   .sphere(dotSize)
-                   .translate((0, iBB.ymin, iBB.zlen - dotSize / 2))
-                   )
-            return cap.union(dot)
-        else:
-            return cap
+        return Homing(self._homingType).add(cap)
 
     def wall_thickness(self, thickness: Real) -> T:
         self._wallThickness = thickness
