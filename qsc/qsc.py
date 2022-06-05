@@ -322,7 +322,7 @@ class QSC(object):
         self.width(U(1.5))
         self.length(U(2))
         self.step_fillet(0.221)
-        return self.stem_settings(self._stemSettings.rotation(90).offset((0, 0, 0)))
+        return self
 
     def top_rect_fillet(self, value: Real) -> T:
         self._topRectFillet = value
