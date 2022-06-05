@@ -58,13 +58,10 @@ class Dish(object):
             return cap.cut(dish.translate((0, 0, h)))
 
     def _create_dish(self, cap: cq.Workplane, inverted):
-        print(self.__dict__)
         ctbb = cap.faces("<Z").findSolid().BoundingBox()
         x = ctbb.xlen  # + self._topDiff/2
         y = ctbb.ylen  # + self._topDiff/2
         dd_orig = pow((pow(x, 2) + pow(y, 2)), 0.5) - 1
-
-        print(x, y, self._topDiff, dd_orig)
 
         row_adjustments = {
             # (extra DD, extraDDinverted, translateY, translateZInverted, rotation)

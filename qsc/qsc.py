@@ -24,6 +24,7 @@ from qsc import (
     Legend,
     LegendSettings,
     Dish,
+    Support,
 )
 from qsc.base import Base, BaseSettings
 
@@ -83,7 +84,7 @@ class QSC(object):
         4: -10
     }
     _raisedWidth = 0
-    _specialStabPlacement = None
+    _specialStabPlacement: Iterable[Tuple[Real, Real, Real]] = None
     _stabs = True
     _stemSettings = CherrySettings()
     _step = 10
@@ -124,118 +125,37 @@ class QSC(object):
                 .extrude(stemHeight)
                 .faces("<Z")
                 .chamfer(0.24)
+                .rotate((0, 0, 0), (0, 0, 1), self._stemSettings.get_rotation())
                 )
 
-        # if self._stemType == StemType.CHERRY:
-        #     cherryCross = (1.5 + self._stemHSlop, 4.2 + self._stemVSlop)
-        #     return (cq.Workplane("XY")
-        #             .sketch()
-        #             .circle(self._stemCherryDiameter / 2)
-        #             .rect(cherryCross[0], cherryCross[1], mode="s")
-        #             .rect(cherryCross[1], cherryCross[0], mode="s")
-        #             .finalize()
-        #             .extrude(stemHeight)
-        #             .faces("<Z")
-        #             .chamfer(0.24)
-        #             )
-        # else:
-        #     return cq.Workplane().box(2, 2, stemHeight)
+    def _stems(self, cap):
+        stem = self._stem()
+        positions = [self._stemSettings.get_offset()]
 
-    def _build_wedge(self, cap, extra):
-        def _worl(bb, rotation, extra):
-            l = bb.ylen if rotation == 0 or rotation == 180 else bb.xlen
-            l = l + extra
-            l = l - U(0.25).mm().get() if self._isoEnter else l
-            return l
+        if self._specialStabPlacement is not None:
+            positions = [*positions, *self._specialStabPlacement]
+        elif self._stabs:
+            if self._width.u().get() >= 6:
+                positions.append((-50, 0, 0))
+                positions.append((50, 0, 0))
+            elif self._width.u().get() >= 2:
+                positions.append((-12, 0, 0))
+                positions.append((12, 0, 0))
 
-        def _len(bb, rotation, extra1, extra2):
-            l = _worl(bb, rotation, extra1)
-            l = (l - self._wallThickness) / 2 + extra2
-            return l
+            if self._length.u().get() >= 6:
+                positions.append((0, -50, 0))
+                positions.append((0, 50, 0))
+            elif self._length.u().get() >= 2:
+                positions.append((0, -12, 0))
+                positions.append((0, 12, 0))
 
-        capBB = cap.findSolid().BoundingBox()
-        h = self._height - self._topThickness - 0.3
-        bottomBB = cap.faces("<Z").findSolid().BoundingBox()
-        topBB = cap.faces("<Z").section(h).findSolid().BoundingBox()
-        rotation = self._stemSettings.get_rotation()
-        bottom_fillet = -(self._bottomFillet * 2)
-        bottom = _len(bottomBB, rotation, bottom_fillet, extra)
-        top = _len(topBB, rotation, 0, extra)
+        wp = cq.Workplane("XY")
+        for pos in positions:
+            wp.add(stem.translate(pos))
 
-        diff = bottom - top
-        closing = 0.5
-
-        a = self._srect(0.5, bottom + closing, op="none")
-        b = self._srect(0.5, top + closing, op="none")
-        offset = (_worl(bottomBB, rotation, bottom_fillet) - self._wallThickness) / 4 - extra - 1
-        return (cq.Workplane("XY")
-                .placeSketch(a, b.moved(cq.Location(cq.Vector(0, diff / 2, h))))
-                .loft()
-                .translate((0, -offset, 0))
-                )
-
-    def _buildStemSupport(self, cap):
-        if self._stemSettings.get_type() == StemType.CHERRY:
-            return self._build_wedge(cap, -self._stemSettings.get_radius())
-        else:
-            return cq.Workplane("XY").box(2, 2, 2)
-
-    def _stemAndSupport(self, cap):
-        rotation = self._stemSettings.get_rotation()
-        offset = self._stemSettings.get_offset()
-        support = self._stemSettings.get_support()
-        wORl = self._width if rotation == 0 or rotation == 180 else self._length
-        wORl = wORl.u().get()
-        w = cq.Workplane("XY")
-        s = self._stem().union(self._buildStemSupport(cap)) if support else self._stem()
-        w.add(s.translate(offset))
-        if self._stabs:
-            ##old_edges = cap.edges().objects
-            # added = (cap.faces("<Z")
-            #         .sketch()
-            #         #.push([(12,0)])
-            #         .circle(self._stemCherryDiameter/2)
-            #         .rect(1.5, 4.2, mode="s")
-            #         .rect(4.2,1.5,  mode="s")
-            #         .finalize()
-            #         .extrude(until="next")
-            #         )
-            # p = (cq.Workplane()
-            #     .box(20, 20, 20)
-            #     .faces(">Z")
-            #     .shell(2)
-            #     .faces(">Z")
-            #     .sketch()
-            #     .circle(5)
-            #     .rect(5,3, mode="s")
-            #     .finalize()
-            #     .extrude(until="next")
-            #     )
-            ##show_object(added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1))))
-            # added = (added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1)))
-            #         .chamfer(0.24)
-            #         )
-            # show_object(added)
-            # show_object(p.faces("<Z").workplane().faces(cq.selectors.RadiusNthSelector(1)))
-            # new_edges = added.edges().objects
-            # added = added.newObject(list(set(new_edges)-set(old_edges)))
-            # show_object(added.edges("<Z").chamfer(0.24))
-            # show_object(cap.faces("<Z").sketch().push([(12,0)]).circle(self._stemCherryDiameter/2).finalize().extrude(until="next").last().faces("<Z"))
-            # show_object(w)
-
-            if self._specialStabPlacement is not None:
-                m = s.translate(self._specialStabPlacement[0])
-                n = s.translate(self._specialStabPlacement[1])
-                mn = m.union(n)
-                w.add(mn)
-            elif wORl >= 6:
-                w.add(s.translate((-50, 0, 0)))
-                w.add(s.translate((50, 0, 0)))
-            elif wORl >= 2:
-                w.add(s.translate((-12, 0, 0)))
-                w.add(s.translate((12, 0, 0)))
-
-        return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), rotation))
+        cap = cap.union(wp.combine())
+        cap = Support(self._stemSettings).positions(positions).build(cap)
+        return cap
 
     def _add_legend(self, cap, dished):
         side = {
@@ -351,7 +271,7 @@ class QSC(object):
         self._stabs = not disable
         return self
 
-    def special_stab_placement(self, placement: Tuple[Tuple[Real, Real, Real], Tuple[Real, Real, Real]]) -> T:
+    def special_stab_placement(self, placement: Iterable[Tuple[Real, Real, Real]]) -> T:
         self._specialStabPlacement = placement
         return self
 
@@ -569,7 +489,7 @@ class QSC(object):
         cap = self._fillet(dished) if self._step > 2 else dished
         cap = self._homing(cap) if self._step > 3 else cap
         cap = cap.cut(self._hollow()) if self._step > 4 else cap
-        cap = self._stemAndSupport(cap) if self._step > 5 else cap
+        cap = self._stems(cap) if self._step > 5 else cap
         cap, legend = self._add_legend(cap, dished) if self._step > 6 else (cap, None)
 
         if legend is not None:

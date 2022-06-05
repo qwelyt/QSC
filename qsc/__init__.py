@@ -5,6 +5,7 @@ from .mm import MM
 from .stem import (
     CherrySettings,
     StemSettings,
+    Support,
     Stem,
     StemType,
 )
@@ -30,6 +31,7 @@ __all__ = {
     "RoundingType",
     "StemSettings",
     "StemType",
+    "Support",
     "StepType",
     "StepSettings",
     "U",
