@@ -224,6 +224,54 @@ class QSC(object):
                 .row_angle(self._rowAngle)
                 ).dish(cap)
 
+    def _apply_fillet(self, cap, fillet: Real, var: str):
+        try:
+            cap = cap.fillet(fillet)
+        except StdFail_NotDone:
+            self._printSettings()
+            raise ValueError(var + " too big",
+                             "Your " + var + "+setting [" + str(fillet) + "] is too big for the current shape (r" + str(self._row)
+                             + ", " + str(self._width.u().get()) + "x" + str(self._length.u().get())
+                             + "). Try reducing it.")
+        except Exception:
+            self._printSettings()
+            raise
+        return cap
+
+    def _find_max_fillet(self, cap, face, who):
+        print("Max " + who + " fillet:", cap.findSolid().maxFillet(cap.faces(face).findFace().Edges(), 0.001, 100))
+
+    def _fillet(self, cap):
+        # maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.001, 100)
+        # print("hoho", maxTop)
+        # maxStep = 0
+        # debug(cap.edges())
+        if self._stepType:
+            selector = {
+                1: ">Z[1]",
+                2: ">Z[1]",
+                3: ">Z[1]",
+                4: ">Z[1]",
+            }.get(self._row)
+            if self._stepFillet < 0:
+                self._find_max_fillet(cap, selector, "step")
+            if self._stepFillet > 0:
+                # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
+                cap = self._apply_fillet(cap.faces(selector), self._stepFillet, "Step fillet")
+
+        if self._topFillet < 0:
+            self._find_max_fillet(cap, ">Z", "top")
+        if self._topFillet > 0:
+            # print("Top:",maxTop, "Step:",maxStep)
+            cap = self._apply_fillet(cap.faces(">Z"), self._topFillet, "Top fillet")
+
+        if self._bottomFillet < 0:
+            self._find_max_fillet(cap, "<Z", "bottom")
+        if self._bottomFillet > 0:
+            cap = self._apply_fillet(cap.faces("<Z"), self._bottomFillet, "Bottom fillet")
+
+        return cap
+
     def _homing(self, cap):
         return Homing(self._homingType).add(cap)
 
@@ -430,53 +478,6 @@ class QSC(object):
         iterfillet = shape.maxFillet(shape.Edges(), 0.001, 1000)
         return iterfillet
 
-    def _apply_fillet(self, cap, fillet: Real, var: str):
-        try:
-            cap = cap.faces(">Z").fillet(fillet)
-        except StdFail_NotDone:
-            self._printSettings()
-            raise ValueError(var + " too big",
-                             "Your " + var + "+setting [" + str(fillet) + "] is too big for the current shape (r" + str(self._row)
-                             + ", " + str(self._width.u().get()) + "x" + str(self._length.u().get())
-                             + "). Try reducing it.")
-        except Exception:
-            self._printSettings()
-            raise
-        return cap
-
-    def _find_max_fillet(self, cap, face, who):
-        print("Max " + who + " fillet:", cap.findSolid().maxFillet(cap.faces(face).findFace().Edges(), 0.001, 100))
-
-    def _fillet(self, cap):
-        # maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.001, 100)
-        # print("hoho", maxTop)
-        # maxStep = 0
-        # debug(cap.edges())
-        if self._stepType:
-            selector = {
-                1: ">Z[1]",
-                2: ">Z[1]",
-                3: ">Z[1]",
-                4: ">Z[1]",
-            }.get(self._row)
-            if self._stepFillet < 0:
-                self._find_max_fillet(cap, selector, "step")
-            if self._stepFillet > 0:
-                # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
-                cap = self._apply_fillet(cap.faces(selector), self._stepFillet, "Step fillet")
-
-        if self._topFillet < 0:
-            self._find_max_fillet(cap, ">Z", "top")
-        if self._topFillet > 0:
-            # print("Top:",maxTop, "Step:",maxStep)
-            cap = self._apply_fillet(cap.faces(">Z"), self._topFillet, "Top fillet")
-
-        if self._bottomFillet < 0:
-            self._find_max_fillet(cap, "<Z", "bottom")
-        if self._bottomFillet > 0:
-            cap = self._apply_fillet(cap.faces("<Z"), self._bottomFillet, "Bottom fillet")
-
-        return cap
 
     def _pre_checks(self):
         if self._homingType == HomingType.SCOOPED:
