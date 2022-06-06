@@ -230,7 +230,7 @@ class QSC(object):
         except StdFail_NotDone:
             self._printSettings()
             raise ValueError(var + " too big",
-                             "Your " + var + "+setting [" + str(fillet) + "] is too big for the current shape (r" + str(self._row)
+                             "Your " + var + " setting [" + str(fillet) + "] is too big for the current shape (r" + str(self._row)
                              + ", " + str(self._width.u().get()) + "x" + str(self._length.u().get())
                              + "). Try reducing it.")
         except Exception:
@@ -246,18 +246,6 @@ class QSC(object):
         # print("hoho", maxTop)
         # maxStep = 0
         # debug(cap.edges())
-        if self._stepType:
-            selector = {
-                1: ">Z[1]",
-                2: ">Z[1]",
-                3: ">Z[1]",
-                4: ">Z[1]",
-            }.get(self._row)
-            if self._stepFillet < 0:
-                self._find_max_fillet(cap, selector, "step")
-            if self._stepFillet > 0:
-                # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
-                cap = self._apply_fillet(cap.faces(selector), self._stepFillet, "Step fillet")
 
         if self._topFillet < 0:
             self._find_max_fillet(cap, ">Z", "top")
@@ -270,10 +258,19 @@ class QSC(object):
         if self._bottomFillet > 0:
             cap = self._apply_fillet(cap.faces("<Z"), self._bottomFillet, "Bottom fillet")
 
+        if self._stepType is not None:
+            selector = {
+                1: ">Z[1]",
+                2: ">Z[1]",
+                3: ">Z[1]",
+                4: ">Z[1]",
+            }.get(self._row)
+            if self._stepFillet < 0:
+                self._find_max_fillet(cap, selector, "step")
+            if self._stepFillet > 0:
+                # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
+                cap = self._apply_fillet(cap.faces(selector), self._stepFillet, "Step fillet")
         return cap
-
-    def _homing(self, cap):
-        return Homing(self._homingType).add(cap)
 
     def wall_thickness(self, thickness: Real) -> T:
         self._wallThickness = thickness
@@ -327,10 +324,10 @@ class QSC(object):
         self._homingType = type
         if type == HomingType.SCOOPED:
             height_adjustment = {
-                1: 0.6035380213915218,
-                2: 0.3804040372053077,
-                3: 0.2755496042382024,
-                4: 0.0490026944352374
+                1: 1.6035380213915218,
+                2: 1.3804040372053077,
+                3: 1.2755496042382024,
+                4: 1.0490026944352374
             }.get(self._row)
             if adjustHeight:
                 self._height += height_adjustment
@@ -443,8 +440,6 @@ class QSC(object):
     def _debug_edges(self, shape):
         edges = self._edges(shape.edges().vals())
         print(edges[0])
-        if self._show_object_exists():
-            show_object(edges[0][1], options={"color": (255, 0, 250)})
         return edges
 
     def debug(self):
@@ -452,43 +447,23 @@ class QSC(object):
         return self.build()
 
     def isValid(self):
-        self._pre_checks()
         base = self._base().tag("base")
         cap = self._dish(base)
         plane_faces = cap.faces("%Plane")
         non_plane_faces = cap.faces("not %Plane")
-        if self._show_object_exists():
-            show_object(plane_faces, options={"color": (255, 0, 0)})
-            # show_object(non_plane_faces, options={"color":(0,0,255), "alpha":0.99})
-            # show_object(cap.plane_faces("not %Plane"), options={"alpha":0.99, "color":(0,0,255)})
         plane_face_count = len(plane_faces.edges().vals())
         non_plane_face_count = len(non_plane_faces.edges().vals())
         valid = plane_face_count == 4 and non_plane_face_count == 14
         if not valid:
             self._printSettings()
             print(plane_face_count, non_plane_face_count)
-        return (valid, cap)
-
-    def maxPossibleFillet(self):
-        self._pre_checks()
-        base = self._base()
-        cap = self._dish(base)
-        shape = cap.findSolid()
-
-        iterfillet = shape.maxFillet(shape.Edges(), 0.001, 1000)
-        return iterfillet
-
-
-    def _pre_checks(self):
-        if self._homingType == HomingType.SCOOPED:
-            self._topThickness += 1
+        return valid, cap
 
     def build(self):
-        self._pre_checks()
         base = self._base().tag("base")
         dished = self._dish(base) if self._step > 1 else base
         cap = self._fillet(dished) if self._step > 2 else dished
-        cap = self._homing(cap) if self._step > 3 else cap
+        cap = Homing(self._homingType).add(cap) if self._step > 3 else cap
         cap = cap.cut(self._hollow()) if self._step > 4 else cap
         cap = self._stems(cap) if self._step > 5 else cap
         cap, legend = self._add_legend(cap, dished) if self._step > 6 else (cap, None)
@@ -499,7 +474,7 @@ class QSC(object):
                 legend.translate((0, 0, -self._height / 2)) if legend is not None else None
             )
         return (
-            cap,  # .translate((0, 0, -self._height / 2)),
+            cap.translate((0, 0, -self._height / 2)),
             None
         )
 
@@ -510,26 +485,6 @@ class QSC(object):
         name = name + "_stepped" if self._stepType else name
         name = name + "_" + self._legend if self._legend is not None else name
         return name
-
-    def _show_object_exists(self):
-        try:
-            show_object(cq.Workplane())
-            return True
-        except:
-            return False
-
-    def show(self, rotate=False):
-        if self._show_object_exists():
-            c = self.build()
-            if rotate:
-                show_object(self._rotate(c[0]), options={"color": (200, 20, 100)})
-                if self._legend is not None:
-                    show_object(self._rotate(c[1]), options={"color": (90, 200, 40)})
-            else:
-                show_object(c[0], options={"color": (200, 20, 100)})
-                if self._legend is not None:
-                    show_object(c[1], options={"color": (90, 200, 40)})
-        return self
 
     def exportSTL(self, tolerance=0.05, angularTolerance=0.05):
         c = self.build()

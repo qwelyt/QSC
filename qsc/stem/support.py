@@ -37,21 +37,25 @@ class Support(object):
                     "mv": (x, push_value + y),
                     "rect": (1, delta),
                     "face": "<Y",
+                    "bblen": lambda bb: bb.xlen,
                 },
                 90: {
                     "mv": (push_value + x, y),
                     "rect": (delta, 1),
                     "face": ">X",
+                    "bblen": lambda bb: bb.ylen,
                 },
                 180: {
                     "mv": (x, -push_value + y),
                     "rect": (1, delta),
                     "face": ">Y",
+                    "bblen": lambda bb: bb.xlen,
                 },
                 270: {
                     "mv": (-push_value + x, y),
                     "rect": (delta, 1),
                     "face": "<X",
+                    "bblen": lambda bb: bb.ylen,
                 },
             }.get(rotation)
 
@@ -74,12 +78,12 @@ class Support(object):
                     .copyWorkplane(face)
                     .sketch()
                     .push([(0, -delta / 2)])
-                    .rect(pBB.xlen, pBB.zlen - delta)
+                    .rect(v.get("bblen")(pBB), pBB.zlen - delta)
                     .finalize()
                     .extrude(until="next")
                     )
 
-        delta = 0.3
+        delta = 0.15
         push_value = settings.get_radius() + delta
         wp = cq.Workplane()
         for pos in positions:
