@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import math
 from typing import Tuple, Iterable, TypeVar
 
@@ -395,28 +396,7 @@ class QSC(object):
         return self
 
     def clone(self) -> QSC:
-        return (QSC()
-                .bottom_fillet(self._bottomFillet)
-                .bottom_rect_fillet(self._bottomRectFillet)
-                .disable_stabs(not self._stabs)
-                .dish_thickness(self._dishThickness)
-                .height(self._height)
-                .homing(self._homingType, False)
-                .inverted(self._inverted)
-                .iso_enter(self._isoEnter)
-                .legend(self._legend, self._fontSize, self._firstLayerHeight, self._font)
-                .length(self._length)
-                .row(self._row, False)
-                .stem_settings(self._stemSettings)
-                .step(self._step)
-                .stepped(self._stepType, self._raisedWidth, self._stepHeight)
-                .top_diff(self._topDiff)
-                .top_fillet(self._topFillet)
-                .top_rect_fillet(self._topRectFillet)
-                .top_thickness(self._topThickness)
-                .wall_thickness(self._wallThickness)
-                .width(self._width)
-                )
+        return copy.deepcopy(self)
 
     def _edges(self, e):
         es = []
