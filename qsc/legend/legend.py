@@ -16,7 +16,7 @@ class Legend(object):
                      .center(self._settings.get_x_pos(), self._settings.get_y_pos())
                      )
         nc = cq.Workplane().add(cap).copyWorkplane(placement)
-        nw = cq.Workplane().add(cap).copyWorkplane(nc)
+        nw = cq.Workplane().copyWorkplane(nc)
         c = nc.text(txt=self._settings.get_legend(),
                     fontsize=self._settings.get_font_size(),
                     distance=self._settings.get_distance(),

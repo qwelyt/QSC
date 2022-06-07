@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import Tuple, Iterable, TypeVar
 
 import cadquery as cq
@@ -66,7 +67,6 @@ cq.Shape.maxFillet = _maxFillet
 class QSC(object):
     _bottomFillet = 0.5
     _bottomRectFillet = 1
-    _debug = False
     _dishThickness = MM(1.8).get()
     _firstLayerHeight = MM(1.2).get()
     _height = MM(8).get()
@@ -103,18 +103,6 @@ class QSC(object):
 
     def __init__(self):
         pass
-
-    def _srect(self, width: Real, depth: Real, delta: Real = 9.0, op: str = "chamfer"):
-        rect = (cq.Sketch().rect(width, depth))
-
-        if delta == 0:
-            return rect
-        elif op == "chamfer":
-            return rect.vertices().chamfer(delta)
-        elif op == "fillet":
-            return rect.vertices().fillet(delta)
-        else:
-            return rect
 
     def _stem(self):
         stemHeight = self._height - self._topThickness
@@ -442,10 +430,6 @@ class QSC(object):
         print(edges[0])
         return edges
 
-    def debug(self):
-        self._debug = True
-        return self.build()
-
     def isValid(self):
         base = self._base().tag("base")
         cap = self._dish(base)
@@ -459,7 +443,7 @@ class QSC(object):
             print(plane_face_count, non_plane_face_count)
         return valid, cap
 
-    def build(self):
+    def build(self, center=True):
         base = self._base().tag("base")
         dished = self._dish(base) if self._step > 1 else base
         cap = self._fillet(dished) if self._step > 2 else dished
@@ -468,13 +452,37 @@ class QSC(object):
         cap = self._stems(cap) if self._step > 5 else cap
         cap, legend = self._add_legend(cap, dished) if self._step > 6 else (cap, None)
 
-        if legend is not None:
+        if center:
+            if legend is not None:
+                return (
+                    cap.translate((0, 0, -self._height / 2)),
+                    legend.translate((0, 0, -self._height / 2)),
+                )
             return (
                 cap.translate((0, 0, -self._height / 2)),
-                legend.translate((0, 0, -self._height / 2)) if legend is not None else None
+                None
+            )
+        else:
+            if legend is not None:
+                return (
+                    cap,
+                    legend if legend is not None else None
+                )
+            return (
+                cap,
+                None
+            )
+
+    def rotated(self):
+        c = self.build(False)
+        b = self._base()
+        if c[1] is not None:
+            return (
+                self._rotate(c[0], b, self._stemSettings.get_rotation()),
+                self._rotate(c[1], b, self._stemSettings.get_rotation()),
             )
         return (
-            cap.translate((0, 0, -self._height / 2)),
+            self._rotate(c[0], b, self._stemSettings.get_rotation()),
             None
         )
 
@@ -487,18 +495,34 @@ class QSC(object):
         return name
 
     def exportSTL(self, tolerance=0.05, angularTolerance=0.05):
+        base = self._base()
         c = self.build()
-        cq.exporters.export(self._rotate(c[0]), self.name() + ".stl", tolerance=tolerance, angularTolerance=angularTolerance)
+        cq.exporters.export(self._rotate(c[0], base, self._stemSettings.get_rotation()), self.name() + ".stl", tolerance=tolerance, angularTolerance=angularTolerance)
         print("Cap exported")
         if self._legend is not None:
-            cq.exporters.export(self._rotate(c[1]), self.name() + "_LEGEND" + ".stl", tolerance=tolerance, angularTolerance=angularTolerance)
+            cq.exporters.export(self._rotate(c[1], base, self._stemSettings.get_rotation()), self.name() + "_LEGEND" + ".stl", tolerance=tolerance,
+                                angularTolerance=angularTolerance)
             print("Legend exported")
         return self
 
-    def _rotate(self, w):
-        return (w.rotate((0, 0, 0), (0, 0, 1), -self._stemSettings.get_rotation())
-                .rotate((0, 0, 0), (1, 0, 0), 105)
-                )
+    def _rotate(self, cap: cq.Workplane, base: cq.Workplane, stem_rotation: int):
+        face = {
+            0: ("<Y", (1, 0, 0)),
+            90: (">X", (0, 1, 0)),
+            180: (">Y", (1, 0, 0)),
+            270: ("<X", (0, 1, 0)),
+        }.get(stem_rotation)
+
+        angle = (base.faces(face[0])
+                 .workplane()
+                 .plane
+                 .zDir
+                 .getSignedAngle(cq.Vector(0, 0, 1, ))
+                 )
+
+        rotation = 180 - math.degrees(angle)
+
+        return cap.rotate((0, 0, 0), face[1], rotation)
 
     def _printSettings(self):
         print(self.__dict__)
