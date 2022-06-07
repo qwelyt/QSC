@@ -164,22 +164,22 @@ class QSC(object):
         return Legend(settings).apply_legend(cap, dished)
 
     def _base(self):
-        return Base((BaseSettings()
-                     .width(self._width.mm().get())
-                     .length(self._length.mm().get())
-                     .height(MM(self._height).mm().get())
-                     .diff(self._topDiff)
-                     .top_rounding(self._topRectFillet, RoundingType.FILLET)
-                     .bottom_rounding(self._bottomRectFillet, RoundingType.FILLET)
-                     .iso_enter(self._isoEnter)
-                     .step_settings((StepSettings()
-                                     .step_type(self._stepType)
-                                     .raised_width(self._raisedWidth)
-                                     .step_height(self._stepHeight)
-                                     )
-                                    )
-                     )
-                    ).build()
+        base_settings = (BaseSettings()
+                         .width(self._width.mm().get())
+                         .length(self._length.mm().get())
+                         .height(MM(self._height).mm().get())
+                         .diff(self._topDiff)
+                         .top_rounding(self._topRectFillet, RoundingType.FILLET)
+                         .bottom_rounding(self._bottomRectFillet, RoundingType.FILLET)
+                         .iso_enter(self._isoEnter)
+                         .step_settings((StepSettings()
+                                         .step_type(self._stepType)
+                                         .raised_width(self._raisedWidth)
+                                         .step_height(self._stepHeight)
+                                         )
+                                        )
+                         )
+        return Base(base_settings).build()
 
     def _hollow(self):
         ih = (MM(self._height).mm().get() - self._topThickness)
@@ -411,8 +411,8 @@ class QSC(object):
         return edges
 
     def isValid(self):
-        base = self._base().tag("base")
-        cap = self._dish(base)
+        self._step = 2
+        cap, _ = self.build()
         plane_faces = cap.faces("%Plane")
         non_plane_faces = cap.faces("not %Plane")
         plane_face_count = len(plane_faces.edges().vals())
