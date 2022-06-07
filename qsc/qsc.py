@@ -1,17 +1,36 @@
 from __future__ import annotations
 
-from typing import Tuple, Iterable
+import copy
+import math
+from typing import Tuple, Iterable, TypeVar
 
 import cadquery as cq
 from OCP.StdFail import StdFail_NotDone
 
-from .Percentage import Percentage
-from .Constants import Constants
-from .HomingType import HomingType
-from .MM import MM
-from .StemType import StemType
-from .StepType import StepType
-from .U import U
+from qsc.types import Real
+from qsc import (
+    Percentage,
+    Constants,
+    MM,
+    U,
+    StemType,
+    Homing,
+    HomingType,
+    RoundingType,
+    StepType,
+    StepSettings,
+    CherrySettings,
+    StemSettings,
+    StemType,
+    Stem,
+    Legend,
+    LegendSettings,
+    Dish,
+    Support,
+)
+from qsc.base import Base, BaseSettings
+
+T = TypeVar("T", bound="QSC")
 
 
 def _maxFillet(
@@ -19,7 +38,7 @@ def _maxFillet(
         edgeList: Iterable[cq.Edge],
         tolerance=0.1,
         maxIterations: int = 10,
-) -> float:
+) -> Real:
     if not self.isValid():
         raise ValueError("Invalid Shape")
     window_max = 2 * self.BoundingBox().DiagonalLength
@@ -47,9 +66,8 @@ cq.Shape.maxFillet = _maxFillet
 
 
 class QSC(object):
-    _bottomFillet = 0.6
+    _bottomFillet = 0.5
     _bottomRectFillet = 1
-    _debug = False
     _dishThickness = MM(1.8).get()
     _firstLayerHeight = MM(1.2).get()
     _height = MM(8).get()
@@ -57,6 +75,7 @@ class QSC(object):
     _inverted = False
     _isoEnter = False
     _legend = None
+    _legendFaceSelection = None
     _length = U(1)
     _row = 3
     _rowAngle = {
@@ -65,24 +84,19 @@ class QSC(object):
         3: 0,
         4: -10
     }
-    _stabs = True
-    _specialStabPlacement = None
-    _stemCherryDiameter = MM(5.6).get()
-    _stemHSlop = MM(0.0).get()
-    _stemOffset = (0, 0, 0)
-    _stemRotation = 0
-    _stemSupport = True
-    _stemType = StemType.CHERRY
-    _stemVSlop = MM(0.0).get()
-    _step = 10
-    _stepType = None
-    _stepHeight = None
     _raisedWidth = 0
+    _specialStabPlacement: Iterable[Tuple[Real, Real, Real]] = None
+    _stabs = True
+    _stemSettings = CherrySettings()
+    _step = 10
+    _stepFillet = 0.6
+    _stepHeight = None
+    _stepType = None
     _topDiff = MM(-7).get()
-    _topFillet = 0.6
+    _topFillet = 0.5
     _topRectFillet = 2
-    _topThickness = MM(3).get()
-    _wallThickness = MM(1.5).get()
+    _topThickness = MM(4).get()
+    _wallThickness = MM(2).get()
     _width = U(1)
 
     _font = "Arial"
@@ -91,451 +105,207 @@ class QSC(object):
     def __init__(self):
         pass
 
-    def _srect(self, width, depth, delta=9.0, op="chamfer"):
-        rect = (cq.Sketch().rect(width, depth))
-
-        if delta == 0:
-            return rect
-        elif op == "chamfer":
-            return (rect.vertices().chamfer(delta))
-        elif op == "fillet":
-            return (rect.vertices().fillet(delta))
-        else:
-            return rect
-
-    def _box(self, width, depth, height, diff=0.0, deltaA=9.0, deltaB=4.0, op="chamfer"):
-        a = self._srect(width, depth, deltaA, op)
-        b = self._srect(width + diff, depth + diff, deltaB, op)
-        return (cq.Workplane("XY")
-                .placeSketch(a, b.moved(cq.Location(cq.Vector(0, 0, height))))
-                .loft()
-                )
-
     def _stem(self):
         stemHeight = self._height - self._topThickness
-        if self._stemType == StemType.CHERRY:
-            cherryCross = (1.5 + self._stemHSlop, 4.2 + self._stemVSlop)
-            return (cq.Workplane("XY")
-                    .sketch()
-                    .circle(self._stemCherryDiameter / 2)
-                    .rect(cherryCross[0], cherryCross[1], mode="s")
-                    .rect(cherryCross[1], cherryCross[0], mode="s")
-                    .finalize()
-                    .extrude(stemHeight)
-                    .faces("<Z")
-                    .chamfer(0.24)
-                    )
-        else:
-            return cq.Workplane().box(2, 2, stemHeight)
 
-    def _buildStemSupport(self, cap):
-        if self._stemType == StemType.CHERRY:
-            bottomBB = cap.faces("<Z").findSolid().BoundingBox()
-            wORl = bottomBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else bottomBB.xlen
-            wORl = wORl - self._bottomFillet * 2
-            wORl = wORl - U(0.25).mm().get() if self._isoEnter else wORl
-            w = (wORl - self._wallThickness) / 2 - self._stemCherryDiameter / 2
-            h = self._height - self._topThickness - 0.3
-
-            topBB = cap.faces("<Z").section(h).findSolid().BoundingBox()
-            topLen = topBB.ylen if self._stemRotation == 0 or self._stemRotation == 180 else topBB.xlen
-            topLen = topLen - U(0.25).mm().get() if self._isoEnter else topLen
-            w2 = (topLen - self._wallThickness) / 2 - self._stemCherryDiameter / 2
-            diff = w - w2
-
-            closing = 0.5
-            a = self._srect(0.5, w + closing, op="none")
-            b = self._srect(0.5, w2 + closing, op="none")
-
-            supportOffset = (wORl - self._wallThickness) / 4 + self._stemCherryDiameter / 2 - 1
-            return (cq.Workplane("XY")
-                    .placeSketch(a, b.moved(cq.Location(cq.Vector(0, diff / 2, h))))
-                    .loft()
-                    .translate((0, -supportOffset, 0))
-                    )
-        else:
-            return (cq.Workplane("XY").box(2, 2, 2))
-
-    def _stemAndSupport(self, cap):
-        wORl = self._width if self._stemRotation == 0 or self._stemRotation == 180 else self._length
-        wORl = wORl.u().get()
-        w = cq.Workplane("XY")
-        s = self._stem().union(self._buildStemSupport(cap)) if self._stemSupport else self._stem()
-        w.add(s.translate(self._stemOffset))
-        if self._stabs:
-            ##old_edges = cap.edges().objects
-            # added = (cap.faces("<Z")
-            #         .sketch()
-            #         #.push([(12,0)])
-            #         .circle(self._stemCherryDiameter/2)
-            #         .rect(1.5, 4.2, mode="s")
-            #         .rect(4.2,1.5,  mode="s")
-            #         .finalize()
-            #         .extrude(until="next")
-            #         )
-            # p = (cq.Workplane()
-            #     .box(20, 20, 20)
-            #     .faces(">Z")
-            #     .shell(2)
-            #     .faces(">Z")
-            #     .sketch()
-            #     .circle(5)
-            #     .rect(5,3, mode="s")
-            #     .finalize()
-            #     .extrude(until="next")
-            #     )
-            ##show_object(added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1))))
-            # added = (added.edges(cq.selectors.BoxSelector((-self._stemCherryDiameter,-self._stemCherryDiameter,-1),(self._stemCherryDiameter,self._stemCherryDiameter,1)))
-            #         .chamfer(0.24)
-            #         )
-            # show_object(added)
-            # show_object(p.faces("<Z").workplane().faces(cq.selectors.RadiusNthSelector(1)))
-            # new_edges = added.edges().objects
-            # added = added.newObject(list(set(new_edges)-set(old_edges)))
-            # show_object(added.edges("<Z").chamfer(0.24))
-            # show_object(cap.faces("<Z").sketch().push([(12,0)]).circle(self._stemCherryDiameter/2).finalize().extrude(until="next").last().faces("<Z"))
-            # show_object(w)
-
-            if self._specialStabPlacement is not None:
-                m = s.translate(self._specialStabPlacement[0])
-                n = s.translate(self._specialStabPlacement[1])
-                mn = m.union(n)
-                w.add(mn)
-            elif wORl >= 6:
-                w.add(s.translate((-50, 0, 0)))
-                w.add(s.translate((50, 0, 0)))
-            elif wORl >= 2:
-                w.add(s.translate((-12, 0, 0)))
-                w.add(s.translate((12, 0, 0)))
-
-        return cap.union(w.combine().rotate((0, 0, 0), (0, 0, 1), self._stemRotation))
-
-    def _addLegend(self, cap):
-        if self._legend is None:
-            return cap, None
-        sideSelector = {
-            1: {
-                0: ">>Y[3]",
-                90: "<<X[2]",
-                180: "<<Y[2]",
-                270: ">>X[3]"
-            },
-            2: {
-                0: ">>Y[3]",
-                90: "<<X[2]",
-                180: "<<Y[2]",
-                270: ">>X[3]"
-            },
-            3: {
-                0: ">>Y[3]",
-                90: "<<X[2]",
-                180: "<<Y[2]",
-                270: ">>X[3]"
-            },
-            4: {
-                0: ">>Y[3]",
-                90: "<<X[2]",
-                180: "<<Y[2]",
-                270: ">>X[3]"
-            }
-        }.get(self._row).get(self._stemRotation)
-        # show_object(cap.faces(sideSelector))
-        nc = (cap.faces(sideSelector)
-              .workplane(offset=-self._firstLayerHeight, centerOption="CenterOfMass")
-              )
-        nw = cq.Workplane().copyWorkplane(nc)
-        c = nc.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font)
-        t = nw.text(txt=self._legend, fontsize=self._fontSize, distance=self._firstLayerHeight, font=self._font, combine='a', cut=False)
-        return c, t
-
-    def _stepped_base(self):
-        l = self._length.mm().get()
-        w = self._width.mm().get()
-        step_height = self._height / 2 if self._stepHeight is None else self._stepHeight.mm().get()
-        raised = self._box(self._raisedWidth, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-        step = self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-        step = (step.faces(">Z")
-                .sketch()
-                .rect(w, l)
-                .finalize()
-                .extrude(-(self._height - step_height), "cut")
+        stem = Stem(self._stemSettings).build()
+        return (cq.Workplane("XY")
+                .placeSketch(stem)
+                .extrude(stemHeight)
+                .faces("<Z")
+                .chamfer(0.24)
+                .rotate((0, 0, 0), (0, 0, 1), self._stemSettings.get_rotation())
                 )
-        stepWidth = w - self._raisedWidth
 
-        if self._stepType == StepType.LEFT:
-            return (raised.translate((-stepWidth / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        elif self._stepType == StepType.RIGHT:
-            return (raised.translate((stepWidth / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        else:  # self._stepType == StepType.CENTER:
-            return step.add(raised).combine()
+    def _stems(self, cap):
+        stem = self._stem()
+        positions = [self._stemSettings.get_offset()]
 
-    def _base(self):
-        l = self._length.mm().get()
-        w = self._width.mm().get()
-        if self._isoEnter and self._stepType is not None:
-            w6 = w / 6
-            lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(w, l / 2, self._height / 2, self._topDiff / 2, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
-        elif self._isoEnter:
-            w6 = w / 6
-            lower = self._box(w - w6, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(w, l / 2, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, l / 4, 0))).combine()
-        elif self._stepType:
-            return self._stepped_base()
-        else:
-            return self._box(w, l, self._height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
+        if self._specialStabPlacement is not None:
+            positions = [*positions, *self._specialStabPlacement]
+        elif self._stabs:
+            if self._width.u().get() >= 6:
+                positions.append((-50, 0, 0))
+                positions.append((50, 0, 0))
+            elif self._width.u().get() >= 2:
+                positions.append((-12, 0, 0))
+                positions.append((12, 0, 0))
 
-    def _stepped_hollow(self):
-        l = self._length.mm().get() - (self._wallThickness * 2)
-        w = self._width.mm().get() - (self._wallThickness * 2)
-        height = self._height - self._topThickness
-        step_height = self._height / 2 if self._stepHeight is None else self._stepHeight.mm().get()
-        step_height = step_height - 2
-        raised_width = self._raisedWidth - (self._wallThickness * 2)
-        raised = self._box(raised_width, l, height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-        step = self._box(w, l, height, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-        step_cut = height - step_height
-        step = (step.faces(">Z")
-                .sketch()
-                .rect(w, l)
-                .finalize()
-                .extrude(-step_cut, "cut")
-                )
-        step_width = w - raised_width
+            if self._length.u().get() >= 6:
+                positions.append((0, -50, 0))
+                positions.append((0, 50, 0))
+            elif self._length.u().get() >= 2:
+                positions.append((0, -12, 0))
+                positions.append((0, 12, 0))
 
-        if self._stepType == StepType.LEFT:
-            return (raised.translate((-step_width / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        elif self._stepType == StepType.RIGHT:
-            return (raised.translate((step_width / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        else:  # self._stepType == StepType.CENTER:
-            return step.add(raised).combine()
+        wp = cq.Workplane("XY")
+        for pos in positions:
+            wp.add(stem.translate(pos))
 
-    def _hollow(self):
-        il = self._length.mm().get() - (self._wallThickness * 2)
-        iw = self._width.mm().get() - (self._wallThickness * 2)
-        if self._isoEnter and self._stepType:
-            ih = self._height - self._topThickness
-            il2 = U(1).mm().get() - (self._wallThickness * 2)
-            w = self._width.mm().get()
-            w6 = w / 6
-            iw2 = iw - w6
-            lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(iw, il2, ih / 2, self._topDiff / 2, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
-        elif self._stepType:
-            return self._stepped_hollow()
-        elif self._isoEnter:
-            ih = self._height - self._topThickness
-            il2 = U(1).mm().get() - (self._wallThickness * 2)
-            w = self._width.mm().get()
-            w6 = w / 6
-            iw2 = iw - w6
-            lower = self._box(iw2, il, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            upper = self._box(iw, il2, ih, self._topDiff, self._bottomRectFillet, self._topRectFillet, "fillet")
-            return lower.add(upper.translate((-w6 / 2, il2 / 1.65, 0))).combine()
-        else:
-            ih = self._height - self._topThickness
-            return self._box(iw, il, ih, self._topDiff, 0, 0, "none")
-
-    def _createDish(self, inverted):
-        isoOrNot = U(2).mm().get() if self._isoEnter else self._width.mm().get()
-        w = isoOrNot - self._topDiff * -1 / 1.2
-        l = self._length.mm().get() - self._topDiff * -1 / 1.2
-        dd_orig = pow((pow(w, 2) + pow(l, 2)), 0.5) + 1
-        row_adjustments = {
-            # (extra DD, extraDDinverted, translateY, translateZInverted, rotation)
-            1: (2.0, 2.0, -1.0, -4.1, self._rowAngle.get(1)),
-            2: (2.0, 2.0, -1.2, -3.1, self._rowAngle.get(2)),
-            3: (0.0, 0.0, 0.0, -1.8, self._rowAngle.get(3)),
-            4: (0.4, 1.55, 1.2, -3.1, self._rowAngle.get(4)),
-        }.get(self._row)
-        dd = dd_orig + row_adjustments[0]
-        dd = dd + row_adjustments[1] if inverted else dd
-        s_x, s_y = dd / 2 / self._dishThickness, dd / 2 / self._dishThickness
-        s_z = 1.5 if self._homingType == HomingType.SCOOPED else 1.0
-        scale_matrix = cq.Matrix(
-            [
-                [s_x, 0.0, 0.0, 0.0],
-                [0.0, s_y, 0.0, 0.0],
-                [0.0, 0.0, s_z, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ]
-        )
-        scaled_sphere = (cq.Solid
-                         .makeSphere(self._dishThickness, angleDegrees1=-90)
-                         .transformGeometry(scale_matrix)
-                         )
-
-        # show_object(scaled_sphere, options={"color":(255,0,0), "alpha":0.5})
-        # show_object(scaled_sphere2, options={"color":(0,255,0), "alpha":0.5})
-
-        if inverted:
-            top = (cq.Workplane().add(scaled_sphere).split(keepTop=True))
-            b = (cq.Solid.extrudeLinear(top.faces("<Z").val(), cq.Vector(0, 0, -dd)))
-            return (cq.Workplane("XY")
-                    .add(top)
-                    .union(b)
-                    .translate((0, row_adjustments[2], row_adjustments[3]))
-                    .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
-                    )
-        else:
-            bottom = (cq.Workplane().add(scaled_sphere).split(keepBottom=True))
-            p = (cq.Solid.extrudeLinear(bottom.faces(">Z").val(), cq.Vector(0, 0, dd)))
-            return (cq.Workplane("XY")
-                    .add(bottom)
-                    .union(p)
-                    .translate((0, row_adjustments[2], -1))
-                    .rotate((0, 0, 0), (1, 0, 0), row_adjustments[4])
-                    )
-
-    def _dish(self, cap):
-        dish = self._createDish(self._inverted)
-        capBB = cap.findSolid().BoundingBox()
-        h = capBB.zmax
-        if self._inverted:
-            dishBB = dish.findSolid().BoundingBox()
-            intersection = cap.intersect(dish.translate((0, 0, h)))
-            cutter = cq.Solid.extrudeLinear(intersection.faces(">Z").val(), cq.Vector(0, 0, dishBB.zlen))
-            scale_matrix = cq.Matrix(
-                [
-                    [1.1, 0.0, 0.0, 0.0],
-                    [0.0, 1.1, 0.0, 0.0],
-                    [0.0, 0.0, 1.02, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ]
-            )
-            sc = cutter.translate(-cutter.Center()).transformGeometry(scale_matrix).translate(cutter.Center())
-            # show_object(cutter)
-            # debug(sc)
-            # debug(cap)
-            # debug(cq.Workplane().add(cutter).shell(-1))
-            # print(cutter.maxFillet(cutter.Edges(), 0.01, 1000))
-            # cap = cap.cut(cutter)
-            cap = cap.cut(sc)
-            cap = cap.union(intersection)
-        else:
-            # debug(dish)
-            cap = cap.cut(dish.translate((0, 0, h)))
-            if self._debug:
-                show_object(dish.translate((0, 0, h)), options={"color": (255, 255, 255), "alpha": 0.3})
-
+        cap = cap.union(wp.combine())
+        cap = Support(self._stemSettings).positions(positions).build(cap)
         return cap
 
-    def _homing(self, cap):
-        if self._homingType is None or self._homingType is HomingType.SCOOPED:
-            return cap
-        capBB = cap.findSolid().BoundingBox()
-        l = capBB.ylen / 2 if self._homingType == HomingType.BAR else 1
-        placer = cq.Workplane().rect(0.1, l).extrude(capBB.zlen)
-        intersection = cap.intersect(placer)
-        iBB = intersection.faces("<Y").val().BoundingBox()
+    def _add_legend(self, cap, dished):
+        side = {
+            0: "<Y",
+            90: ">X",
+            180: ">Y",
+            270: "<X"
+        }.get(self._stemSettings.get_rotation()) if self._legendFaceSelection is None else self._legendFaceSelection
+        settings = (LegendSettings()
+                    .distance(self._firstLayerHeight)
+                    .font(self._font)
+                    .font_size(self._fontSize)
+                    .legend(self._legend)
+                    .side(side)
+                    .y_pos(self._bottomFillet)
+                    )
+        return Legend(settings).apply_legend(cap, dished)
 
-        if self._homingType == HomingType.BAR:
-            barSize = 1
-            bar = (cq.Workplane("XY")
-                   .sketch()
-                   .rect(capBB.xlen / 3, barSize)
-                   .vertices()
-                   .fillet(barSize / 2)
-                   .finalize()
-                   .extrude(1)
-                   .faces(">Z")
-                   .fillet(barSize / 2)
-                   )
-            b = bar.translate((0, iBB.ymin, iBB.zlen - barSize / 1.5))
-            return cap.add(b)
-        elif self._homingType == HomingType.DOT:
-            dotSize = 1
-            dot = (cq.Workplane()
-                   .sphere(dotSize)
-                   .translate((0, iBB.ymin, iBB.zlen - dotSize / 2))
-                   )
-            return cap.union(dot)
-        else:
-            return cap
+    def _base(self):
+        base_settings = (BaseSettings()
+                         .width(self._width.mm().get())
+                         .length(self._length.mm().get())
+                         .height(MM(self._height).mm().get())
+                         .diff(self._topDiff)
+                         .top_rounding(self._topRectFillet, RoundingType.FILLET)
+                         .bottom_rounding(self._bottomRectFillet, RoundingType.FILLET)
+                         .iso_enter(self._isoEnter)
+                         .step_settings((StepSettings()
+                                         .step_type(self._stepType)
+                                         .raised_width(self._raisedWidth)
+                                         .step_height(self._stepHeight)
+                                         )
+                                        )
+                         )
+        return Base(base_settings).build()
 
-    def wallThickness(self, thickness: float):
+    def _hollow(self):
+        ih = (MM(self._height).mm().get() - self._topThickness)
+        diff = Percentage(ih / self._height).apply(self._topDiff)
+        step_height = self._stepHeight
+        if type(step_height) == MM:
+            step_height = MM(step_height.get() - self._topThickness)
+
+        return Base((BaseSettings()
+                     .width(self._width.mm().get() - self._wallThickness * 2)
+                     .length(self._length.mm().get() - self._wallThickness * 2)
+                     .height(ih)
+                     .diff(diff)
+                     .iso_enter(self._isoEnter, Percentage((U(1).mm().get() - self._wallThickness) / U(2).mm().get()))
+                     .step_settings((StepSettings()
+                                     .step_type(self._stepType)
+                                     .raised_width(self._raisedWidth - self._wallThickness * 2)
+                                     .step_height(step_height)
+                                     )
+                                    )
+                     )
+                    ).build()
+
+    def _dish(self, cap):
+        return (Dish()
+                .dish_thickness(self._dishThickness)
+                .extra_thick(self._homingType == HomingType.SCOOPED)
+                .cap_height(self._height)
+                .inverted(self._inverted)
+                .row(self._row)
+                .row_angle(self._rowAngle)
+                ).dish(cap)
+
+    def _apply_fillet(self, cap, fillet: Real, var: str):
+        try:
+            cap = cap.fillet(fillet)
+        except StdFail_NotDone:
+            self._printSettings()
+            raise ValueError(var + " too big",
+                             "Your " + var + " setting [" + str(fillet) + "] is too big for the current shape (r" + str(self._row)
+                             + ", " + str(self._width.u().get()) + "x" + str(self._length.u().get())
+                             + "). Try reducing it.")
+        except Exception:
+            self._printSettings()
+            raise
+        return cap
+
+    def _find_max_fillet(self, cap, face, who):
+        print("Max " + who + " fillet:", cap.findSolid().maxFillet(cap.faces(face).findFace().Edges(), 0.001, 100))
+
+    def _fillet(self, cap):
+        # maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.001, 100)
+        # print("hoho", maxTop)
+        # maxStep = 0
+        # debug(cap.edges())
+
+        if self._topFillet < 0:
+            self._find_max_fillet(cap, ">Z", "top")
+        if self._topFillet > 0:
+            # print("Top:",maxTop, "Step:",maxStep)
+            cap = self._apply_fillet(cap.faces(">Z"), self._topFillet, "Top fillet")
+
+        if self._bottomFillet < 0:
+            self._find_max_fillet(cap, "<Z", "bottom")
+        if self._bottomFillet > 0:
+            cap = self._apply_fillet(cap.faces("<Z"), self._bottomFillet, "Bottom fillet")
+
+        if self._stepType is not None:
+            selector = {
+                1: ">Z[1]",
+                2: ">Z[1]",
+                3: ">Z[1]",
+                4: ">Z[1]",
+            }.get(self._row)
+            if self._stepFillet < 0:
+                self._find_max_fillet(cap, selector, "step")
+            if self._stepFillet > 0:
+                # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
+                cap = self._apply_fillet(cap.faces(selector), self._stepFillet, "Step fillet")
+        return cap
+
+    def wall_thickness(self, thickness: Real) -> T:
         self._wallThickness = thickness
         return self
 
-    def topThickness(self, thickness: float):
+    def top_thickness(self, thickness: Real) -> T:
         self._topThickness = thickness
         return self
 
-    def width(self, width: U | MM):
+    def width(self, width: U | MM) -> T:
         self._width = width
         return self
 
-    def length(self, length: U | MM):
+    def length(self, length: U | MM) -> T:
         self._length = length
         return self
 
-    def height(self, height: float):
+    def height(self, height: Real) -> T:
         self._height = height
         return self
 
-    def legend(self, legend: str, fontSize: float = -1, firstLayerHeight: float = 1.2, font: str = "Arial"):
+    def legend(self, legend: str, font_size: Real = -1, first_layer_height: Real = 1.2, font: str = "Arial", face_selection: str = None) -> T:
         self._legend = legend
-        self._fontSize = self._height if fontSize == -1 else fontSize
-        self._firstLayerHeight = firstLayerHeight
+        self._fontSize = self._height if font_size == -1 else font_size
+        self._firstLayerHeight = first_layer_height
         self._font = font
+        self._legendFaceSelection = face_selection
         return self
 
-    def topDiff(self, diff: float):
+    def top_diff(self, diff: Real) -> T:
         self._topDiff = diff
         return self
 
-    def dishThickness(self, thickness: float):
+    def dish_thickness(self, thickness: Real) -> T:
         self._dishThickness = thickness
         return self
 
-    def stemType(self, stemtype: StemType):
-        self._stemType = stemtype
+    def stem_settings(self, stem_settings: StemSettings) -> T:
+        self._stemSettings = stem_settings
         return self
 
-    def stemOffset(self, offset: Tuple[float, float, float]):
-        self._stemOffset = offset
-        return self
-
-    def stemRotation(self, rotation: int):
-        self._stemRotation = rotation
-        return self
-
-    def stemCherryDiameter(self, d: float):
-        self._stemCherryDiameter = d
-        return self
-
-    def stemVSlop(self, slop: float):
-        self._stemVSlop = slop
-        return self
-
-    def stemHSlop(self, slop: float):
-        self._stemHSlop = slop
-        return self
-
-    def disableStemSupport(self, disable: bool = True):
-        self._stemSupport = not disable
-        return self
-
-    def disableStabs(self, disable: bool = True):
+    def disable_stabs(self, disable: bool = True) -> T:
         self._stabs = not disable
         return self
 
-    def specialStabPlacement(self, placement: Tuple[Tuple[float, float, float], Tuple[float, float, float]]):
+    def special_stab_placement(self, placement: Iterable[Tuple[Real, Real, Real]]) -> T:
         self._specialStabPlacement = placement
         return self
 
@@ -543,20 +313,20 @@ class QSC(object):
         self._homingType = type
         if type == HomingType.SCOOPED:
             height_adjustment = {
-                1: 0.6035380213915218,
-                2: 0.3804040372053077,
-                3: 0.2755496042382024,
-                4: 0.0490026944352374
+                1: 1.6035380213915218,
+                2: 1.3804040372053077,
+                3: 1.2755496042382024,
+                4: 1.0490026944352374
             }.get(self._row)
             if adjustHeight:
                 self._height += height_adjustment
         return self
 
-    def inverted(self, inverted: bool = True):
+    def inverted(self, inverted: bool = True) -> T:
         self._inverted = inverted
         return self
 
-    def stepped(self, step_type: StepType = StepType.LEFT, raised_width: Percentage | U | MM = None, step_height: MM = None):
+    def stepped(self, step_type: StepType = StepType.LEFT, raised_width: Percentage | U | MM = None, step_height: MM | Percentage = None) -> T:
         self._stepType = step_type
         self._stepHeight = step_height
         if self._isoEnter:
@@ -579,34 +349,38 @@ class QSC(object):
                 return self
             offset = (self._width.mm().get() - raised) / 2.0
             offset = offset * -1 if step_type == StepType.LEFT else offset
-            return self.stemOffset((offset, 0.0, 0.0))
+            return self.stem_settings(self._stemSettings.offset((offset, 0.0, 0.0)))
 
-    def isoEnter(self, iso: bool = True):
+    def iso_enter(self, iso: bool = True) -> T:
         self._isoEnter = iso
         self.width(U(1.5))
         self.length(U(2))
-        self.stemRotation(90)
-        return self.stemOffset((0, 0, 0))
+        self.step_fillet(0.221)
+        return self
 
-    def topRectFillet(self, value: float):
+    def top_rect_fillet(self, value: Real) -> T:
         self._topRectFillet = value
         return self
 
-    def bottomRectFillet(self, value: float):
+    def bottom_rect_fillet(self, value: Real) -> T:
         self._bottomRectFillet = value
         return self
 
-    def topFillet(self, value: float):
+    def top_fillet(self, value: Real) -> T:
         self._topFillet = value
         return self
 
-    def bottomFillet(self, value: float):
+    def step_fillet(self, value: Real) -> T:
+        self._stepFillet = value
+        return self
+
+    def bottom_fillet(self, value: Real) -> T:
         self._bottomFillet = value
         return self
 
-    def row(self, row: int, adjustRow=True):
+    def row(self, row: int, adjust_row=True) -> T:
         self._row = row
-        if adjustRow:
+        if adjust_row:
             row_adjustments = {
                 1: (5, 3),
                 2: (1.5, 0.5),
@@ -614,42 +388,15 @@ class QSC(object):
                 4: (2, 1),
             }.get(self._row)
             self.height(self._height + row_adjustments[0])
-            self.topThickness(self._topThickness + row_adjustments[1])
+            self.top_thickness(self._topThickness + row_adjustments[1])
         return self
 
-    def step(self, steps):
+    def step(self, steps) -> T:
         self._step = steps
         return self
 
-    def clone(self):
-        return (QSC()
-                .bottomFillet(self._bottomFillet)
-                .bottomRectFillet(self._bottomRectFillet)
-                .disableStemSupport(not self._stemSupport)
-                .disableStabs(not self._stabs)
-                .dishThickness(self._dishThickness)
-                .height(self._height)
-                .homing(self._homingType, False)
-                .inverted(self._inverted)
-                .isoEnter(self._isoEnter)
-                .legend(self._legend, self._fontSize, self._firstLayerHeight, self._font)
-                .length(self._length)
-                .row(self._row, False)
-                .stemCherryDiameter(self._stemCherryDiameter)
-                .stemHSlop(self._stemHSlop)
-                .stemType(self._stemType)
-                .stemVSlop(self._stemVSlop)
-                .stepped(self._stepType, self._raisedWidth, self._stepHeight)
-                .stemOffset(self._stemOffset)
-                .stemRotation(self._stemRotation)
-                .step(self._step)
-                .topDiff(self._topDiff)
-                .topFillet(self._topFillet)
-                .topRectFillet(self._topRectFillet)
-                .topThickness(self._topThickness)
-                .wallThickness(self._wallThickness)
-                .width(self._width)
-                )
+    def clone(self) -> QSC:
+        return copy.deepcopy(self)
 
     def _edges(self, e):
         es = []
@@ -661,105 +408,61 @@ class QSC(object):
     def _debug_edges(self, shape):
         edges = self._edges(shape.edges().vals())
         print(edges[0])
-        if self._show_object_exists():
-            show_object(edges[0][1], options={"color": (255, 0, 250)})
         return edges
 
-    def debug(self):
-        self._debug = True
-        return self.build()
-
     def isValid(self):
-        self._pre_checks()
-        base = self._base().tag("base")
-        cap = self._dish(base)
+        self._step = 2
+        cap, _ = self.build()
         plane_faces = cap.faces("%Plane")
         non_plane_faces = cap.faces("not %Plane")
-        if self._show_object_exists():
-            show_object(plane_faces, options={"color": (255, 0, 0)})
-            # show_object(non_plane_faces, options={"color":(0,0,255), "alpha":0.99})
-            # show_object(cap.plane_faces("not %Plane"), options={"alpha":0.99, "color":(0,0,255)})
         plane_face_count = len(plane_faces.edges().vals())
         non_plane_face_count = len(non_plane_faces.edges().vals())
         valid = plane_face_count == 4 and non_plane_face_count == 14
         if not valid:
             self._printSettings()
             print(plane_face_count, non_plane_face_count)
-        return (valid, cap)
+        return valid, cap
 
-    def maxPossibleFillet(self):
-        self._pre_checks()
-        base = self._base()
-        cap = self._dish(base)
-        shape = cap.findSolid()
-
-        iterfillet = shape.maxFillet(shape.Edges(), 0.001, 1000)
-        return iterfillet
-
-    def _fillet(self, cap):
-        # maxTop = cap.findSolid().maxFillet(cap.faces(">Z").findFace().Edges(), 0.001, 100)
-        # print("hoho", maxTop)
-        # maxStep = 0
-        # debug(cap.edges())
-        if self._topFillet > 0:
-            try:
-                if self._stepType:
-                    # maxStep = cap.findSolid().maxFillet(cap.faces(">Z[1]").findFace().Edges(), 0.01, 100)
-                    selector = {
-                        1: ">Z[1]",
-                        2: ">Z[1]",
-                        3: ">Z[1]",
-                        4: ">Z[1]",
-                    }.get(self._row)
-                    cap = cap.faces(selector).fillet(self._topFillet)
-                # print("Top:",maxTop, "Step:",maxStep)
-                cap = cap.faces(">Z").fillet(self._topFillet)
-            except StdFail_NotDone:
-                self._printSettings()
-                raise ValueError("Top fillet too big",
-                                 "Your top fillet setting [" + str(self._topFillet) + "] is too big for the current shape (r" + str(self._row)
-                                 + ", " + str(self._width.u().get()) + "x" + str(self._length.u().get())
-                                 + "). Try reducing it.")
-            except Exception:
-                self._printSettings()
-                raise
-
-        if self._bottomFillet > 0:
-            try:
-                cap = cap.edges("<Z").fillet(self._bottomFillet)
-            except StdFail_NotDone:
-                self._printSettings()
-                raise ValueError("Bottom fillet too big",
-                                 "Your bottom fillet setting [" + str(self._bottomFillet) + "] is too big for the current shape (r" + str(self._row)
-                                 + ", " + str(self._width.u().get()) + "x" + str(self._length)
-                                 + "). Try reducing it.")
-            except Exception:
-                self._printSettings()
-                raise
-
-        return cap
-
-    def _pre_checks(self):
-        if self._homingType == HomingType.SCOOPED:
-            self._topThickness += 1
-
-    def build(self):
-        self._pre_checks()
-        cap = self._base().tag("base")
-        cap = self._dish(cap) if self._step > 1 else cap
-        cap = self._fillet(cap) if self._step > 2 else cap
-        cap = self._homing(cap) if self._step > 3 else cap
+    def build(self, center=True):
+        base = self._base().tag("base")
+        dished = self._dish(base) if self._step > 1 else base
+        cap = self._fillet(dished) if self._step > 2 else dished
+        cap = Homing(self._homingType).add(cap) if self._step > 3 else cap
         cap = cap.cut(self._hollow()) if self._step > 4 else cap
-        cap = self._stemAndSupport(cap) if self._step > 5 else cap
-        cap, legend = self._addLegend(cap) if self._step > 6 else (cap, None)
+        cap = self._stems(cap) if self._step > 5 else cap
+        cap, legend = self._add_legend(cap, dished) if self._step > 6 else (cap, None)
 
-        if self._legend is not None:
+        if center:
+            if legend is not None:
+                return (
+                    cap.translate((0, 0, -self._height / 2)),
+                    legend.translate((0, 0, -self._height / 2)),
+                )
             return (
                 cap.translate((0, 0, -self._height / 2)),
-                legend.translate((0, 0, -self._height / 2)) if legend is not None else None
+                None
+            )
+        else:
+            if legend is not None:
+                return (
+                    cap,
+                    legend if legend is not None else None
+                )
+            return (
+                cap,
+                None
+            )
+
+    def rotated(self):
+        c = self.build(False)
+        b = self._base()
+        if c[1] is not None:
+            return (
+                self._rotate(c[0], b, self._stemSettings.get_rotation()),
+                self._rotate(c[1], b, self._stemSettings.get_rotation()),
             )
         return (
-            cap,  # .translate((0, 0, -self._height / 2)),
+            self._rotate(c[0], b, self._stemSettings.get_rotation()),
             None
         )
 
@@ -771,37 +474,35 @@ class QSC(object):
         name = name + "_" + self._legend if self._legend is not None else name
         return name
 
-    def _show_object_exists(self):
-        try:
-            show_object(cq.Workplane())
-            return True
-        except:
-            return False
-
-    def show(self, rotate=False):
-        if self._show_object_exists():
-            c = self.build()
-            if rotate:
-                show_object(self._rotate(c[0]), options={"color": (200, 20, 100)})
-                if self._legend is not None:
-                    show_object(self._rotate(c[1]), options={"color": (90, 200, 40)})
-            else:
-                show_object(c[0], options={"color": (200, 20, 100)})
-                if self._legend is not None:
-                    show_object(c[1], options={"color": (90, 200, 40)})
-        return self
-
-    def exportSTL(self):
+    def exportSTL(self, tolerance=0.05, angularTolerance=0.05):
+        base = self._base()
         c = self.build()
-        cq.exporters.export(self._rotate(c[0]), self.name() + ".stl")
+        cq.exporters.export(self._rotate(c[0], base, self._stemSettings.get_rotation()), self.name() + ".stl", tolerance=tolerance, angularTolerance=angularTolerance)
+        print("Cap exported")
         if self._legend is not None:
-            cq.exporters.export(self._rotate(c[1]), self.name() + "_LEGEND" + ".stl")
+            cq.exporters.export(self._rotate(c[1], base, self._stemSettings.get_rotation()), self.name() + "_LEGEND" + ".stl", tolerance=tolerance,
+                                angularTolerance=angularTolerance)
+            print("Legend exported")
         return self
 
-    def _rotate(self, w):
-        return (w.rotate((0, 0, 0), (0, 0, 1), -self._stemRotation)
-                .rotate((0, 0, 0), (1, 0, 0), 105)#-257)
-                )
+    def _rotate(self, cap: cq.Workplane, base: cq.Workplane, stem_rotation: int):
+        face = {
+            0: ("<Y", (1, 0, 0)),
+            90: (">X", (0, 1, 0)),
+            180: (">Y", (1, 0, 0)),
+            270: ("<X", (0, 1, 0)),
+        }.get(stem_rotation)
+
+        angle = (base.faces(face[0])
+                 .workplane()
+                 .plane
+                 .zDir
+                 .getSignedAngle(cq.Vector(0, 0, 1, ))
+                 )
+
+        rotation = 180 - math.degrees(angle)
+
+        return cap.rotate((0, 0, 0), face[1], rotation)
 
     def _printSettings(self):
         print(self.__dict__)
