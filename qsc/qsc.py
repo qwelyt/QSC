@@ -474,7 +474,7 @@ class QSC(object):
         name = name + "_" + self._legend if self._legend is not None else name
         return name
 
-    def exportSTL(self, tolerance=0.05, angularTolerance=0.05):
+    def exportSTL(self, tolerance=0.02, angularTolerance=0.02):
         base = self._base()
         c = self.build()
         cq.exporters.export(self._rotate(c[0], base, self._stemSettings.get_rotation()), self.name() + ".stl", tolerance=tolerance, angularTolerance=angularTolerance)
