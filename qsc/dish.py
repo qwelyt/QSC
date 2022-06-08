@@ -1,4 +1,8 @@
 import cadquery as cq
+from typing import TypeVar
+from qsc.types import Real
+
+T = TypeVar("T", bound="Dish")
 
 
 class Dish(object):
@@ -18,46 +22,59 @@ class Dish(object):
     def __init__(self):
         pass
 
-    def dish_thickness(self, thickness):
+    def dish_thickness(self, thickness: Real) -> T:
         self._dishThickness = thickness
         return self
 
-    def extra_thick(self, extra_thick):
+    def extra_thick(self, extra_thick: bool) -> T:
         self._extraThick = extra_thick
         return self
 
-    def cap_height(self, height):
+    def cap_height(self, height: Real) -> T:
         self._height = height
         return self
 
-    def inverted(self, inverted):
+    def inverted(self, inverted: bool) -> T:
         self._inverted = inverted
         return self
 
-    def row(self, row):
+    def row(self, row: int) -> T:
         self._row = row
         return self
 
-    def row_angle(self, row_angle):
+    def row_angle(self, row_angle: Real) -> T:
         self._rowAngle = row_angle
         return self
 
-    def top_diff(self, top_diff):
+    def top_diff(self, top_diff: Real) -> T:
         self._topDiff = top_diff
         return self
 
-    def dish(self, cap: cq.Workplane):
+    def dish(self, cap: cq.Workplane) -> cq.Workplane:
         dish = self._create_dish(cap, self._inverted)
         capBB = cap.findSolid().BoundingBox()
         h = capBB.zmax
         if self._inverted:
-            intersection = cap.intersect(dish.translate((0, 0, h)))
+            place_dish = self._dish_height(self._row, h)
+            intersection = cap.intersect(dish.translate((0, 0, place_dish)))
             bottom = cap.split(keepBottom=True)
             return intersection.union(bottom)
         else:
             return cap.cut(dish.translate((0, 0, h)))
 
-    def _create_dish(self, cap: cq.Workplane, inverted):
+    def _dish_height(self, row: int, cap_height: Real) -> Real:
+        match row:
+            case 1:
+                return cap_height + cap_height / 50
+            case 2:
+                return cap_height - cap_height / 16
+            case 3:
+                return cap_height - cap_height / 5
+            case 4:
+                return cap_height - cap_height / 16
+        return cap_height
+
+    def _create_dish(self, cap: cq.Workplane, inverted) -> cq.Workplane:
         ctbb = cap.faces("<Z").findSolid().BoundingBox()
         x = ctbb.xlen  # + self._topDiff/2
         y = ctbb.ylen  # + self._topDiff/2

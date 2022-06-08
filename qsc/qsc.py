@@ -313,10 +313,10 @@ class QSC(object):
         self._homingType = type
         if type == HomingType.SCOOPED:
             height_adjustment = {
-                1: 1.6035380213915218,
-                2: 1.3804040372053077,
-                3: 1.2755496042382024,
-                4: 1.0490026944352374
+                1: 0.6035380213915218,
+                2: 0.3804040372053077,
+                3: 0.2755496042382024,
+                4: 0.0490026944352374
             }.get(self._row)
             if adjustHeight:
                 self._height += height_adjustment
