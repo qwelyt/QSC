@@ -211,6 +211,12 @@ class QSC(object):
                 .inverted(self._inverted)
                 .row(self._row)
                 .row_angle(self._rowAngle)
+                .step_settings((StepSettings()
+                                .step_type(self._stepType)
+                                .raised_width(self._raisedWidth)
+                                .step_height(self._stepHeight)
+                                )
+                               )
                 ).dish(cap)
 
     def _apply_fillet(self, cap, fillet: Real, var: str):
@@ -346,7 +352,7 @@ class QSC(object):
                 raised = raised_width.mm().get()
             self._raisedWidth = raised
             if step_type == StepType.CENTER:
-                return self
+                return self.stem_settings(self._stemSettings.offset((0.0, 0.0, 0.0)))
             offset = (self._width.mm().get() - raised) / 2.0
             offset = offset * -1 if step_type == StepType.LEFT else offset
             return self.stem_settings(self._stemSettings.offset((offset, 0.0, 0.0)))
