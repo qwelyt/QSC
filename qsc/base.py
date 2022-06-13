@@ -100,11 +100,11 @@ class Base(object):
         self._settings = settings
 
     def build(self):
-        if self._settings.get_iso_enter() and self._settings.get_step_settings().get_type() is not None:
+        if self._settings.get_iso_enter() and self._settings.get_step_settings().get_raised_position() is not None:
             return self._stepped_iso()
         elif self._settings.get_iso_enter():
             return self._iso_enter()
-        elif self._settings.get_step_settings().get_type() is not None:
+        elif self._settings.get_step_settings().get_raised_position() is not None:
             return self._stepped()
         else:
             return self._basic()
@@ -207,10 +207,9 @@ class Base(object):
         w = self._settings.get_width()
         h = self._settings.get_height()
         step_height = step_settings.apply_step_height(h)
-        step_width = w - step_settings.get_raised_width()
         raised = self._box(
             step_settings.get_raised_width(),
-            l,
+            step_settings.get_raised_length(),
             h,
             self._settings.get_diff(),
             self._settings.get_bottom_rounding(),
@@ -234,18 +233,13 @@ class Base(object):
                 .finalize()
                 .extrude(-(h - step_height), combine="cut")
                 )
-        if step_settings.get_type() == StepType.LEFT:
-            return (raised.translate((-step_width / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        elif step_settings.get_type() == StepType.RIGHT:
-            return (raised.translate((step_width / 2, 0, 0))
-                    .add(step)
-                    .combine()
-                    )
-        else:  # self._stepType == StepType.CENTER:
-            return step.add(raised).combine()
+
+        x = step_settings.get_raised_position().x.apply(w - step_settings.get_raised_width()) / 2
+        y = step_settings.get_raised_position().y.apply(l - step_settings.get_raised_length()) / 2
+        return (raised.translate((x, y, 0))
+                .add(step)
+                .combine()
+                )
 
     def _basic(self):
         return self._box(

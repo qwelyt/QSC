@@ -16,6 +16,7 @@ from .legend import (
 from .dish import Dish
 from .homing import Homing
 from .rounding_type import RoundingType
+from .raised_position import RaisedPosition
 from .step_settings import StepSettings
 from .step_type import StepType
 from .u import U
@@ -32,6 +33,7 @@ __all__ = {
     "StemSettings",
     "StemType",
     "Support",
+    "StepPosition"
     "StepType",
     "StepSettings",
     "U",

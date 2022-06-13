@@ -7,6 +7,11 @@ class Percentage(object):
     def __str__(self):
         return str(self._percentage)
 
+    def __eq__(self, other):
+        if isinstance(other, Percentage):
+            return self._percentage == other.get()
+        return False
+
     def apply(self, mm: float) -> float:
         return mm * self._percentage
 

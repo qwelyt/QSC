@@ -7,13 +7,13 @@ from typing import Tuple, Iterable, TypeVar
 import cadquery as cq
 from OCP.StdFail import StdFail_NotDone
 
+from qsc.raised_position import RaisedPosition
 from qsc.types import Real
 from qsc import (
     Percentage,
     Constants,
     MM,
     U,
-    StemType,
     Homing,
     HomingType,
     RoundingType,
@@ -21,7 +21,6 @@ from qsc import (
     StepSettings,
     CherrySettings,
     StemSettings,
-    StemType,
     Stem,
     Legend,
     LegendSettings,
@@ -84,6 +83,7 @@ class QSC(object):
         3: 0,
         4: -10
     }
+    _raisedLength = 0
     _raisedWidth = 0
     _specialStabPlacement: Iterable[Tuple[Real, Real, Real]] = None
     _stabs = True
@@ -91,7 +91,7 @@ class QSC(object):
     _step = 10
     _stepFillet = 0.6
     _stepHeight = None
-    _stepType = None
+    _raisedPosition = None
     _topDiff = MM(-7).get()
     _topFillet = 0.5
     _topRectFillet = 2
@@ -173,8 +173,9 @@ class QSC(object):
                          .bottom_rounding(self._bottomRectFillet, RoundingType.FILLET)
                          .iso_enter(self._isoEnter)
                          .step_settings((StepSettings()
-                                         .step_type(self._stepType)
                                          .raised_width(self._raisedWidth)
+                                         .raised_length(self._raisedLength)
+                                         .raised_position(self._raisedPosition)
                                          .step_height(self._stepHeight)
                                          )
                                         )
@@ -195,8 +196,9 @@ class QSC(object):
                      .diff(diff)
                      .iso_enter(self._isoEnter, Percentage((U(1).mm().get() - self._wallThickness) / U(2).mm().get()))
                      .step_settings((StepSettings()
-                                     .step_type(self._stepType)
                                      .raised_width(self._raisedWidth - self._wallThickness * 2)
+                                     .raised_length(self._raisedLength - self._wallThickness * 2)
+                                     .raised_position(self._raisedPosition)
                                      .step_height(step_height)
                                      )
                                     )
@@ -204,20 +206,15 @@ class QSC(object):
                     ).build()
 
     def _dish(self, cap):
-        return (Dish()
-                .dish_thickness(self._dishThickness)
-                .extra_thick(self._homingType == HomingType.SCOOPED)
-                .cap_height(self._height)
-                .inverted(self._inverted)
-                .row(self._row)
-                .row_angle(self._rowAngle)
-                .step_settings((StepSettings()
-                                .step_type(self._stepType)
-                                .raised_width(self._raisedWidth)
-                                .step_height(self._stepHeight)
-                                )
-                               )
-                ).dish(cap)
+        dish = (Dish()
+            .dish_thickness(self._dishThickness)
+            .extra_thick(self._homingType == HomingType.SCOOPED)
+            .cap_height(self._height)
+            .inverted(self._inverted)
+            .row(
+            self._row).row_angle(self._rowAngle).step_settings(
+            (StepSettings().raised_width(self._raisedWidth).raised_length(self._raisedLength).raised_position(self._raisedPosition).step_height(self._stepHeight))))
+        return dish.dish(cap), dish
 
     def _apply_fillet(self, cap, fillet: Real, var: str):
         try:
@@ -253,7 +250,7 @@ class QSC(object):
         if self._bottomFillet > 0:
             cap = self._apply_fillet(cap.faces("<Z"), self._bottomFillet, "Bottom fillet")
 
-        if self._stepType is not None:
+        if self._raisedPosition is not None:
             selector = {
                 1: ">Z[1]",
                 2: ">Z[1]",
@@ -332,36 +329,72 @@ class QSC(object):
         self._inverted = inverted
         return self
 
-    def stepped(self, step_type: StepType = StepType.LEFT, raised_width: Percentage | U | MM = None, step_height: MM | Percentage = None) -> T:
-        self._stepType = step_type
+    def stepped(self, step_type: StepType | RaisedPosition = StepType.LEFT, raised_width: Percentage | U | MM = None, raised_length: Percentage | U | MM = None,
+                step_height: MM | Percentage = None) -> T:
+        self._raisedPosition = step_type.value[0] if type(step_type) is StepType else step_type
         self._stepHeight = step_height
+        self._stabs = False
         if self._isoEnter:
+            self._raisedWidth = U(1.5).mm().get()
+            self._raisedLength = U(2).mm().get()
             return self
         else:
             if raised_width is None:
-                raised_width = {
-                    StepType.LEFT: Constants.RAISED_PERCENTAGE,
-                    StepType.CENTER: U(1),
-                    StepType.RIGHT: Constants.RAISED_PERCENTAGE,
-                }.get(step_type)
+                if type(step_type) is StepType:
+                    raised_width = {
+                        StepType.LEFT: Constants.RAISED_PERCENTAGE,
+                        StepType.CENTER: U(1),
+                        StepType.RIGHT: Constants.RAISED_PERCENTAGE,
+                        StepType.UP: Percentage(1),
+                        StepType.DOWN: Percentage(1),
+                    }.get(step_type)
+                else:
+                    raised_width = Percentage(0.5)
 
-            raised = 0
+            if raised_length is None:
+                if type(step_type) is StepType:
+                    raised_length = {
+                        StepType.LEFT: Percentage(1),
+                        StepType.CENTER: U(1),
+                        StepType.RIGHT: Percentage(1),
+                        StepType.UP: Constants.RAISED_PERCENTAGE,
+                        StepType.DOWN: Constants.RAISED_PERCENTAGE,
+                    }.get(step_type)
+                else:
+                    raised_length = Percentage(0.5)
+
+            raised_w = 0
+            raised_l = 0
             if type(raised_width) is Percentage:
-                raised = raised_width.apply(self._width.mm().get())
+                raised_w = raised_width.apply(self._width.mm().get())
             elif type(raised_width) is U or type(raised_width) is MM:
-                raised = raised_width.mm().get()
-            self._raisedWidth = raised
-            if step_type == StepType.CENTER:
+                raised_w = raised_width.mm().get()
+
+            if type(raised_length) is Percentage:
+                raised_l = raised_length.apply(self._length.mm().get())
+            elif type(raised_length) is U or type(raised_length) is MM:
+                raised_l = raised_length.mm().get()
+
+            self._raisedWidth = raised_w
+            self._raisedLength = raised_l
+
+            if self._raisedPosition == RaisedPosition(0, 0):
                 return self.stem_settings(self._stemSettings.offset((0.0, 0.0, 0.0)))
-            offset = (self._width.mm().get() - raised) / 2.0
-            offset = offset * -1 if step_type == StepType.LEFT else offset
-            return self.stem_settings(self._stemSettings.offset((offset, 0.0, 0.0)))
+
+            offset_w = self._raisedPosition.x.apply(self._width.mm().get() - self._raisedWidth) / 2
+            offset_l = self._raisedPosition.y.apply(self._length.mm().get() - self._raisedLength) / 2
+
+            return self.stem_settings(self._stemSettings.offset((offset_w, offset_l, 0.0)))
 
     def iso_enter(self, iso: bool = True) -> T:
         self._isoEnter = iso
-        self.width(U(1.5))
-        self.length(U(2))
-        self.step_fillet(0.221)
+        if iso:
+            self.width(U(1.5))
+            self.length(U(2))
+            self.step_fillet(0.221)
+            if self._raisedPosition is not None:
+                self._raisedWidth = U(1.5).mm().get()
+                self._raisedLength = U(2).mm().get()
         return self
 
     def top_rect_fillet(self, value: Real) -> T:
@@ -431,7 +464,7 @@ class QSC(object):
 
     def build(self, center=True):
         base = self._base().tag("base")
-        dished = self._dish(base) if self._step > 1 else base
+        dished = self._dish(base)[0] if self._step > 1 else base
         cap = self._fillet(dished) if self._step > 2 else dished
         cap = Homing(self._homingType).add(cap) if self._step > 3 else cap
         cap = cap.cut(self._hollow()) if self._step > 4 else cap
@@ -476,7 +509,7 @@ class QSC(object):
         name = "qsc_row" + str(self._row)
         name = name + "_isoEnter" if self._isoEnter else name + "_" + str(self._width.u().get()) + "x" + str(self._length.u().get())
         name = name + "_i" if self._inverted else name
-        name = name + "_stepped" if self._stepType else name
+        name = name + "_stepped" if self._raisedPosition else name
         name = name + "_" + self._legend if self._legend is not None else name
         return name
 
