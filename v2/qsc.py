@@ -1,4 +1,5 @@
 import cadquery as cq
+import math
 
 U_IN_MM = 19.05
 
@@ -19,6 +20,31 @@ class MM(object):
     def __init__(self, val):
         self._val = val
     
+    def __add__(self, other):
+        if isinstance(other, int) or isinstance(other, float):
+            return MM(self._val+other)
+        if isinstance(other, MM) or isinstance(other, U):
+            return MM(self._val + other.mm().get())
+        
+        raise Error()
+        
+    def __sub__(self, other):
+        if isinstance(other, int) or isinstance(other, float):
+            return MM(self._val-other)
+        if isinstance(other, MM) or isinstance(other, U):
+            return MM(self._val - other.mm().get())
+        
+        raise Error()
+        
+    def __mul__(self, other):
+        if isinstance(other, int) or isinstance(other, float):
+            return MM(self._val*other)
+        if isinstance(other, MM) or isinstance(other, U):
+            return MM(self._val * other.mm().get())
+        
+        raise Error()
+        
+    
     def mm(self):
         return self
     
@@ -29,16 +55,16 @@ class MM(object):
         return self._val
 
 class QSC(object):
+    _dish_depth = MM(1.3)
     _bottom = (MM(18.2),MM(18.2))
     _bottom_fillet = MM(1)
-    _top = (MM(12),MM(12))
+    _top = (MM(11),MM(11))
     _top_fillet = MM(2)
-    _height = MM(13)
-    _wall_thickness = MM(3)
-    _top_thickness = MM(3+2.8)
+    _height = MM(8)
+    _wall_thickness = MM(1.5)
+    _top_thickness = MM(1.5)+_dish_depth
     _edge_fillet = MM(0.2)
-    _dish_depth = MM(2.8)
-    _convex = True
+    _convex = False
     
     def _base(top, bottom, top_fillet, bottom_fillet, height):
         top = (cq.Sketch()
@@ -101,7 +127,79 @@ class QSC(object):
             
             return scoop
     
+    def _stem(cap):
+        cross = (1.55, 4.25)
+        cross_sketch = (cq.Sketch()
+                        .rect(cross[0], cross[1])
+                        .rect(cross[1], cross[0])
+                        .clean()
+                        )
+        core = (cap.faces("<Z")
+                .workplane()
+                .sketch()
+                .circle(5.6/2)
+                .finalize()
+                .extrude(until="next")
+                ) - cap
+        
+        height = core.findSolid().BoundingBox().zlen
+        stem = (core.faces("<Z")
+                .workplane()
+                .placeSketch(cross_sketch)
+                .extrude(-height, combine="cut")
+                ).faces("<Z").chamfer(0.2)
+        
+        
+        return stem
+        
+    
+    def _stem_support(cap):
+        delta = 0.15
+        stem_radius = 5.6/2
+        pillar = (cap.faces("<Z")
+                  .workplane()
+                  .sketch()
+                  .push([(0, stem_radius + delta/2)])
+                  .rect(0.5,0.1)
+                  .finalize()
+                  .extrude(until="next")
+                  ) - cap
+        
+        face = pillar.faces("<Y").workplane(centerOption="CenterOfMass")
+        r = face.findSolid().BoundingBox()
+        support = (cq.Workplane()
+                   .add(cap)
+                   .copyWorkplane(face)
+                   .sketch()
+                   .rect(r.xlen, r.zlen - delta)
+                   .finalize()
+                   .extrude(until="next")
+                   ) - cap
+        
+        return support
+    
+    
+    def _rotate(self, cap: cq.Workplane, base: cq.Workplane, stem_rotation: int):
+        face = {
+            0: ("<Y", (1, 0, 0)),
+            90: (">X", (0, 1, 0)),
+            180: (">Y", (1, 0, 0)),
+            270: ("<X", (0, 1, 0)),
+        }.get(stem_rotation)
+
+        angle = (base.faces(face[0])
+                 .workplane()
+                 .plane
+                 .zDir
+                 .getSignedAngle(cq.Vector(0, 0, 1, ))
+                 )
+
+        rotation = 180 - math.degrees(angle)
+
+        return cap.rotate((0, 0, 0), face[1], rotation)
+    
     def build(self):
+        #print(self._top_thickness)
         base = (QSC._base(self._top, self._bottom, self._top_fillet, self._bottom_fillet, self._height)
 
                 )
@@ -110,19 +208,38 @@ class QSC(object):
 
         baseDish = (base - dish).edges().fillet(self._edge_fillet.mm().get())
         
-        cut = QSC._base(
-            tuple(map(lambda v: MM(v.mm().get()-self._wall_thickness.mm().get()), self._top)), 
-            tuple(map(lambda v: MM(v.mm().get()-self._wall_thickness.mm().get()), self._bottom)), 
+        cut = (QSC._base(
+            tuple(map(lambda v: v-self._wall_thickness*2, self._top)), 
+            tuple(map(lambda v: v-self._wall_thickness*2, self._bottom)), 
             self._top_fillet, 
             self._bottom_fillet, 
-            MM(self._height.mm().get()-self._top_thickness.mm().get())
+            self._height
+            ).faces(">Z")
+            .rect(self._bottom[0].mm().get(), self._bottom[1].mm().get())
+            .extrude(-self._top_thickness.mm().get(), combine="cut")
             )
+        #cut = (base.faces(">Z")
+        #       .rect(self._bottom[0].mm().get(), self._bottom[1].mm().get())
+        #       .extrude(-self._top_thickness.mm().get(), "cut")
+        #       )
         #debug(cut)
+        cap = (baseDish-cut)
+        stem = QSC._stem(cap)
+        
+        #debug(stem)
+        cap = cap+stem
         
         
-        return baseDish-cut
+        stem_support = QSC._stem_support(cap)
+        #debug(stem_support)
+        cap = cap + stem_support
+        rotated = self._rotate(cap, base, 180)
+        return rotated
+    
+    
     
 
-c = QSC().build()
+q = QSC()
+c = q.build()
 
 show_object(c)
