@@ -65,6 +65,8 @@ class QSC(object):
     _top_thickness = MM(1.5)+_dish_depth
     _edge_fillet = MM(0.2)
     _convex = False
+    _build_step = 20
+    _rotated = True
     
     def _base(top, bottom, top_fillet, bottom_fillet, height):
         top = (cq.Sketch()
@@ -95,14 +97,26 @@ class QSC(object):
         height = height.mm().get()
         depth = depth.mm().get()
         if convex:
-            return (cq.Workplane("YZ").transformed(offset=cq.Vector(0, height-2.1, -bx/2), rotate=cq.Vector(0, 0, angle))
-            .moveTo(-by/2, -1)
-            .threePointArc((0, 2), (by/2, -1))
-            .lineTo(by/2, 10)
-            .lineTo(-by/2, 10)
-            .close()
-            .extrude(bx, combine=False)
-        )
+            return(cq.Workplane("YZ").transformed(offset=cq.Vector(0, height-depth, bx/2), rotate=cq.Vector(0, 0, angle))
+                .moveTo(-by/2+2,0)
+                .threePointArc((0, min(-0.1, -depth+1.5)), (by/2-2, 0))
+                .lineTo(by/2, height)
+                .lineTo(-by/2, height)
+                .close()
+                .workplane(offset=-bx/2)
+                .moveTo(-by/2-2, -0.5)
+                .threePointArc((0, depth), (by/2+2, -0.5))
+                .lineTo(by/2, height)
+                .lineTo(-by/2, height)
+                .close()
+                .workplane(offset=-bx/2)
+                .moveTo(-by/2+2, 0)
+                .threePointArc((0, min(-0.1, -depth+1.5)), (by/2-2, 0))
+                .lineTo(by/2, height)
+                .lineTo(-by/2, height)
+                .close()
+                .loft(combine=False)
+            )
         else:
             return(cq.Workplane("YZ").transformed(offset=cq.Vector(0, height, bx/2), rotate=cq.Vector(0, 0, angle))
                 .moveTo(-by/2+2,0)
@@ -200,46 +214,108 @@ class QSC(object):
     
     def build(self):
         #print(self._top_thickness)
-        base = (QSC._base(self._top, self._bottom, self._top_fillet, self._bottom_fillet, self._height)
-
+        base = 0
+        cap = 0
+        if self._build_step > 0:
+            base = (QSC._base(self._top, self._bottom, self._top_fillet, self._bottom_fillet, self._height))
+            cap = base
+        if self._build_step > 1:
+            dish = QSC._dish(self._top, self._bottom, self._height, self._dish_depth, self._convex, 0)
+            #debug(dish)
+            cap = (base - dish).edges().fillet(self._edge_fillet.mm().get())
+        if self._build_step > 2:
+            cut = (QSC._base(
+                tuple(map(lambda v: v-self._wall_thickness*2, self._top)), 
+                tuple(map(lambda v: v-self._wall_thickness*2, self._bottom)), 
+                self._top_fillet, 
+                self._bottom_fillet, 
+                self._height
+                ).faces(">Z")
+                .rect(self._bottom[0].mm().get(), self._bottom[1].mm().get())
+                .extrude(-self._top_thickness.mm().get(), combine="cut")
                 )
-        dish = QSC._dish(self._top, self._bottom, self._height, self._dish_depth, self._convex, 0)
-        #debug(dish)
-
-        baseDish = (base - dish).edges().fillet(self._edge_fillet.mm().get())
+            #cut = (base.faces(">Z")
+            #       .rect(self._bottom[0].mm().get(), self._bottom[1].mm().get())
+            #       .extrude(-self._top_thickness.mm().get(), "cut")
+            #       )
+            #debug(cut)
+            cap = (cap-cut)
+        if self._build_step > 3:
+            stem = QSC._stem(cap)
+            
+            #debug(stem)
+            cap = cap+stem
         
-        cut = (QSC._base(
-            tuple(map(lambda v: v-self._wall_thickness*2, self._top)), 
-            tuple(map(lambda v: v-self._wall_thickness*2, self._bottom)), 
-            self._top_fillet, 
-            self._bottom_fillet, 
-            self._height
-            ).faces(">Z")
-            .rect(self._bottom[0].mm().get(), self._bottom[1].mm().get())
-            .extrude(-self._top_thickness.mm().get(), combine="cut")
-            )
-        #cut = (base.faces(">Z")
-        #       .rect(self._bottom[0].mm().get(), self._bottom[1].mm().get())
-        #       .extrude(-self._top_thickness.mm().get(), "cut")
-        #       )
-        #debug(cut)
-        cap = (baseDish-cut)
-        stem = QSC._stem(cap)
-        
-        #debug(stem)
-        cap = cap+stem
-        
-        
-        stem_support = QSC._stem_support(cap)
-        #debug(stem_support)
-        cap = cap + stem_support
-        rotated = self._rotate(cap, base, 180)
-        return rotated
+        if self._build_step > 4:
+            stem_support = QSC._stem_support(cap)
+            #debug(stem_support)
+            cap = cap + stem_support
+            
+        if self._rotated:
+            return self._rotate(cap, base, 180)
+        else:
+            return cap
     
     
     
 
 q = QSC()
+p = QSC()
+p._convex = True
+
 c = q.build()
+d = p.build()
 
 show_object(c)
+show_object(d.translate((U(1).mm().get(),0,0)))
+
+def apa():
+    (cq.Workplane("YZ").transformed(offset=cq.Vector(0, height, bx/2), rotate=cq.Vector(0, 0, angle))
+        .moveTo(-by/2+2,0)
+        .threePointArc((0, 0), (by/2-2, 0))
+        .lineTo(by/2, height)
+        .lineTo(-by/2, height)
+        .close()
+        .workplane(offset=-bx/2)
+        .moveTo(-by/2-2, -0.5)
+        .threePointArc((0, -depth), (by/2+2, -0.5))
+        .lineTo(by/2, height)
+        .lineTo(-by/2, height)
+        .close()
+        .workplane(offset=-bx/2)
+        .moveTo(-by/2+2, 0)
+        .threePointArc((0, min(-0.1, -depth+1.5)), (by/2-2, 0))
+        .lineTo(by/2, height)
+        .lineTo(-by/2, height)
+        .close()
+        .loft(combine=False)
+        )
+def a():
+    by=18
+    bx=18
+    height=20
+    depth=3
+    return (cq.Workplane("YZ").transformed(offset=cq.Vector(0, height, bx/2), rotate=cq.Vector(0,0,0))
+          .moveTo(-by/2+2,0)
+          .threePointArc((0,0),(by/2-2,-0.5))
+          .lineTo(by/2, height)
+          .lineTo(-by/2, height)
+          .close()
+          .workplane(offset=-bx/2)
+          .moveTo(-by/2+2,0)
+          .threePointArc((0,depth),(by/2-2,-0.5))
+          .lineTo(by/2, height)
+          .lineTo(-by/2, height)
+          .close()
+          .workplane(offset=-bx/2)
+          .moveTo(-by/2+2,0)
+          .threePointArc((0,0),(by/2-2,-0.5))
+          .lineTo(by/2, height)
+          .lineTo(-by/2, height)
+          .close()
+          .loft()
+          )
+#debug(cq.Workplane().rect(20,20).extrude(8-1.7))
+# b = a()
+# show_object(b)
+# show_object(cq.Workplane().box(1,1,1))
