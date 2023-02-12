@@ -2,6 +2,7 @@ import cadquery as cq
 import math
 
 U_IN_MM = 19.05
+UC_IN_MM = 18.2
 
 class U(object):
     def __init__(self, val):
@@ -12,6 +13,16 @@ class U(object):
     
     def u(self):
         return self
+    
+    def get(self):
+        return self._val
+
+class UC(object):
+    def __init__(self, val):
+        self._val = val
+        
+    def mm(self):
+        return MM(self._val*UC_IN_MM)
     
     def get(self):
         return self._val
@@ -56,7 +67,7 @@ class MM(object):
 
 class QSC(object):
     _dish_depth = MM(1.3)
-    _bottom = (MM(18.2),MM(18.2))
+    _bottom = (UC(1).mm(),UC(1).mm())
     _bottom_fillet = MM(1)
     _top = (MM(11),MM(11))
     _top_fillet = MM(2)
