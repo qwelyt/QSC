@@ -1,5 +1,24 @@
+# Things this thing should be able to do (in order of importance):
+# (legend: + == done, - == ToDo)
+# + Generate 1u caps
+# + Generate with cherry stem
+# + Generate support for the stem for printing
+# + Concave caps
+# + Convex caps
+# + Different sizes: 1u, 2, 3, 6.25, 7
+# + Generate stems for stabs at correct places for the size
+# - Homing (scooped, bar, dot)
+# - ISO enter
+# - Rows, set angle
+# - Off-center stems
+# - Stepped simple caps, with off-center stem
+# - Stepped ISO enter
+# - Center-stepped keys (like on Cherry G84-4400
+# - Legends on side (generate both the legend and make a cut in the model, to allow printin in two colours)
+# - Legends on top
 import cadquery as cq
 import math
+from enum import Enum
 
 U_IN_MM = 19.05
 UC_IN_MM = 18.2
@@ -67,6 +86,11 @@ class MM(object):
     def get(self):
         return self._val
 
+class Homing(Enum):
+    BAR = 1
+    DOT = 2
+    SCOOP = 3
+
 class QSC(object):
     _dish_depth = MM(1.3)
     _width = UC(1).mm()
@@ -81,6 +105,7 @@ class QSC(object):
     _convex = False
     _build_step = 20
     _rotated = True
+    _homing = None
     
     def _base(top, bottom, top_fillet, bottom_fillet, height):
         top = (cq.Sketch()
@@ -154,6 +179,13 @@ class QSC(object):
             )
             
             return scoop
+    def _homing_bump(cap, kind):
+        if kind == Homing.BAR:
+            return cq.Workplane()
+        elif kind == Homing.DOT:
+            return cq.Workplane()
+        else:
+            return cq.Workplane()
     
     def _stem_positions(width):
         positions = [(0,0)] # Always center (not true for stepped)
@@ -291,13 +323,24 @@ class QSC(object):
         top = (self._width + self._top_diff[0], self._length + self._top_diff[1])
         bottom = (self._width, self._length)
         if self._build_step > 0:
+            # Build basic shape
             base = (QSC._base(top, bottom, self._top_fillet, self._bottom_fillet, self._height))
             cap = base
+
         if self._build_step > 1:
-            dish = QSC._dish(top, bottom, self._height, self._dish_depth, self._convex, 0)
-            #debug(dish)
+            # Cut the dish
+            depth = self._dish_depth*2 if self._homing == Homing.SCOOP else self._dish_depth
+            dish = QSC._dish(top, bottom, self._height, depth, self._convex, 0)
             cap = (base - dish).edges().fillet(self._edge_fillet.mm().get())
+
         if self._build_step > 2:
+            # Add homing (scoop handled dish creation)
+            if self._homing is not None and self._homing is not Homing.SCOOP:
+                homing = QSC._homing_bump(cap, self._homing)
+                cap = (cap+homing)
+
+        if self._build_step > 3:
+            # Hollow out the cap
             cut = (QSC._base(
                 tuple(map(lambda v: v-self._wall_thickness*2, top)), 
                 tuple(map(lambda v: v-self._wall_thickness*2, bottom)), 
@@ -308,22 +351,17 @@ class QSC(object):
                 .rect(bottom[0].mm().get(), bottom[1].mm().get())
                 .extrude(-self._top_thickness.mm().get(), combine="cut")
                 )
-            #cut = (base.faces(">Z")
-            #       .rect(bottom[0].mm().get(), bottom[1].mm().get())
-            #       .extrude(-self._top_thickness.mm().get(), "cut")
-            #       )
-            #debug(cut)
             cap = (cap-cut)
-        if self._build_step > 3:
-            stem = QSC._stem(cap, bottom)
-            
-            #debug(stem)
-            cap = cap+stem
-        
+
         if self._build_step > 4:
+            # Add stem(s)
+            stem = QSC._stem(cap, bottom)
+            cap = cap+stem 
+        
+        if self._build_step > 5:
+            # Add support to the stem(s) for printing
             stem_support = QSC._stem_support(cap, bottom)
-            #debug(stem_support)
-            cap = cap + stem_support
+            cap = cap + stem_support 
             
         if self._rotated:
             return self._rotate(cap, base, 180)
@@ -431,7 +469,8 @@ def show_stems():
 
 def simple():
     q = QSC()
-    q._width = UC(2).mm()
+    #q._width = UC(2).mm()
+    q._homing = Homing.SCOOP
     b = q.build()
     show_object(b)
 simple()
