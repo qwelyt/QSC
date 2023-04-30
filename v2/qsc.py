@@ -7,7 +7,7 @@
 # + Convex caps
 # + Different sizes: 1u, 2, 3, 6.25, 7
 # + Generate stems for stabs at correct places for the size
-# - Homing (scooped, bar, dot)
+# + Homing (scooped, bar, dot)
 # - ISO enter
 # - Rows, set angle
 # - Off-center stems
@@ -179,13 +179,33 @@ class QSC(object):
             )
             
             return scoop
-    def _homing_bump(cap, kind):
+    def _homing_bump(cap, kind, dish_depth):
+        cBB = cap.findSolid().BoundingBox()
         if kind == Homing.BAR:
-            return cq.Workplane()
+            size = 0.5
+            length = cBB.xlen/3
+            bar = (((cap.faces("<<Z[3]")
+                     .workplane()
+                     .sketch()
+                     .circle(size)
+                     .finalize()
+                     .extrude(length)
+                   ) -cap
+                   )
+                   .fillet(size)
+                   .rotateAboutCenter([0,1,0], 90)
+                   .translate((0,-cBB.ylen/6,-length/2-size/1.7))
+                   )
+            return bar
         elif kind == Homing.DOT:
-            return cq.Workplane()
+            size = 1
+            dot = (cq.Workplane("YZ")
+                   .sphere(size)
+                   .translate((0, 0, cBB.zlen-(size*1.15)))
+                   )
+            return dot
         else:
-            return cq.Workplane()
+            raise Exception("Unknown homing type:"+kind)
     
     def _stem_positions(width):
         positions = [(0,0)] # Always center (not true for stepped)
@@ -221,15 +241,7 @@ class QSC(object):
 
     def _stem(cap, bottom):
         positions = QSC._stem_positions(bottom[0].uc().get())
-       # print(bottom[0].get())
-       # print(bottom[0].uc().get())
-       # if bottom[0].uc().get() >= 6:
-       #     positions.append((50,0))
-       #     positions.append((-50,0))
-       # elif bottom[0].uc().get() >= 2:
-       #     positions.append((12,0))
-       #     positions.append((-12,0))
-        cross = (1.45, 4.15)
+        cross = (1.4, 4.1)
         cross_sketch = (cq.Sketch()
                         .rect(cross[0], cross[1])
                         .rect(cross[1], cross[0])
@@ -317,7 +329,6 @@ class QSC(object):
         return cap.rotate((0, 0, 0), face[1], rotation)
     
     def build(self):
-        #print(self._top_thickness)
         base = 0
         cap = 0
         top = (self._width + self._top_diff[0], self._length + self._top_diff[1])
@@ -336,7 +347,7 @@ class QSC(object):
         if self._build_step > 2:
             # Add homing (scoop handled dish creation)
             if self._homing is not None and self._homing is not Homing.SCOOP:
-                homing = QSC._homing_bump(cap, self._homing)
+                homing = QSC._homing_bump(cap, self._homing, self._dish_depth.mm().get())
                 cap = (cap+homing)
 
         if self._build_step > 3:
@@ -469,8 +480,11 @@ def show_stems():
 
 def simple():
     q = QSC()
-    #q._width = UC(2).mm()
-    q._homing = Homing.SCOOP
+    q._width = UC(1).mm()
+    q._homing = Homing.BAR
+    #q._rotated = False
+    #q._build_step=2
     b = q.build()
+    cBB = b.findSolid().BoundingBox()
     show_object(b)
 simple()
