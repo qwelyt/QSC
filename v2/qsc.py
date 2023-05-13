@@ -20,18 +20,32 @@ import cadquery as cq
 import math
 from enum import Enum
 
-U_IN_MM = 19.05
-UC_IN_MM = 18.2
+U_IN_MM = 19#.05
+UC_IN_MM = 18
 
 class U(object):
     def __init__(self, val):
         self._val = val
+
+    def __repr__(self):
+        return 'U('+str(self._val)+')'
+
+    #def __add__(self, other):
+    #    if isinstance(other, int) or isinstance(other, float):
+    #        return U(self._val+other)
+    #    if isinstance(other, MM) or isinstance(other, U) or isinstance(other, UC):
+    #        return MM(self._val + other.mm().get()).uc()
+    #    
+    #    raise Error()
         
     def mm(self):
         return MM(self._val*U_IN_MM)
     
     def u(self):
         return self
+
+    def uc(self):
+        return self.mm().uc()
     
     def get(self):
         return self._val
@@ -39,12 +53,23 @@ class U(object):
 class UC(object):
     def __init__(self, val):
         self._val = val
+
+    #def __add__(self, other):
+    #    if isinstance(other, int) or isinstance(other, float):
+    #        return UC(self._val+other)
+    #    if isinstance(other, MM) or isinstance(other, U) or isinstance(other, UC):
+    #        return MM(self._val + other.mm().get()).uc()
+    #    
+    #    raise Error()
+    def __repr__(self):
+        return 'UC('+str(self._val)+')'
         
     def mm(self):
         return MM(self._val*UC_IN_MM)
     
     def get(self):
         return self._val
+
 
 class MM(object):
     def __init__(self, val):
@@ -73,6 +98,17 @@ class MM(object):
             return MM(self._val * other.mm().get())
         
         raise Error()
+
+    def __truediv__(self, other):
+        if isinstance(other, int) or isinstance(other, float):
+            return MM(self._val/other)
+        if isinstance(other, MM) or isinstance(other, U):
+            return MM(self._val / other.mm().get())
+        
+        raise Error()
+
+    def __repr__(self):
+        return 'MM('+str(self._val)+')'
         
     
     def mm(self):
@@ -94,7 +130,9 @@ class Homing(Enum):
 class QSC(object):
     _dish_depth = MM(1.3)
     _width = UC(1).mm()
+    _width_slop = MM(0)
     _length = UC(1).mm()
+    _length_slop = MM(0.3)
     _top_diff = ((UC(1).mm()-MM(11).mm())*-1, (UC(1).mm()-MM(11).mm())*-1)
     _bottom_fillet = MM(1)
     _top_fillet = MM(2)
@@ -106,26 +144,64 @@ class QSC(object):
     _build_step = 20
     _rotated = True
     _homing = None
+    _iso_enter = False
     
-    def _base(top, bottom, top_fillet, bottom_fillet, height):
-        top = (cq.Sketch()
-               .rect(top[0].mm().get(), top[1].mm().get())
-               .vertices()
-               .fillet(top_fillet.mm().get())
-               )
-        bottom = (cq.Sketch()
-                  .rect(bottom[0].mm().get(), bottom[1].mm().get())
-                  .vertices()
-                  .fillet(bottom_fillet.mm().get())
-                  )
+    def _base(top, bottom, top_fillet, bottom_fillet, height, iso_enter):
+        _top = None
+        _bottom = None
+        if iso_enter:
+            gamma = (U(2).mm()-1 - bottom[0].mm(), U(1.5).mm()-1-bottom[1].mm())
+            wBody = U(1.25).mm().get()-1 - gamma[0].get()
+            lBody = U(2).mm().get()-1  - gamma[1].get()
+            wShoulder = U(1.5).mm().get()-1-gamma[0].get()
+            lShoulder = U(1).mm().get()-1-gamma[1].get()
+            _bottom = (cq.Sketch()
+                      .rect(lShoulder, wShoulder)
+                      .push([(U(-0.5).mm().get(),U(-0.25/2).mm().get())])
+                      .rect(lBody, wBody)
+                      .reset()
+                      .clean()
+                      .vertices()
+                      .fillet(bottom_fillet.mm().get())
+                      )
+            delta = (top[0]-bottom[0]).mm().get()
+            _top = (cq.Sketch()
+                   .rect(lShoulder+delta, wShoulder+delta)
+                      .push([(U(-0.5).mm().get(),U(-0.25/2).mm().get())])
+                   .rect(lBody+delta, wBody+delta)
+                   .reset()
+                   .clean()
+                   .vertices()
+                   .fillet(top_fillet.mm().get())
+                   )
+
+        else:
+            _top = (cq.Sketch()
+                   .rect(top[0].mm().get(), top[1].mm().get())
+                   .vertices()
+                   .fillet(top_fillet.mm().get())
+                   )
+            _bottom = (cq.Sketch()
+                      .rect(bottom[0].mm().get(), bottom[1].mm().get())
+                      .vertices()
+                      .fillet(bottom_fillet.mm().get())
+                      )
         
-        return (cq.Workplane()
+        cap = (cq.Workplane()
                 .placeSketch(
-                    bottom,
-                    top.moved(cq.Location(cq.Vector(0,0,height.mm().get())))
+                    _bottom,
+                    _top.moved(cq.Location(cq.Vector(0,0,height.mm().get())))
                     )
                 .loft()
                 )
+        cBB = cap.findSolid().BoundingBox()
+        #print("um X:", cBB.xmax, cBB.xmin, cBB.xlen, " Y:", cBB.ymax, cBB.ymin, cBB.ylen)
+        mvX = (cBB.xmin + cBB.xmax)/2
+        mvY = (cBB.ymin + cBB.ymax)/2
+        moved = cap.translate((-mvX, mvY, 0))
+        #mBB = moved.findSolid().BoundingBox()
+        #print("m X:", mBB.xmax, mBB.xmin, mBB.xlen, mvX, " Y:", mBB.ymax, mBB.ymin, mBB.ylen, mvY)
+        return moved
     
     def _dish(top, bottom, height, depth, convex, angle):
         bx = bottom[0].mm().get()
@@ -239,8 +315,15 @@ class QSC(object):
         return positions
 
 
-    def _stem(cap, bottom):
+    def _stem(cap, bottom, offset):
         positions = QSC._stem_positions(bottom[0].uc().get())
+        l = QSC._stem_positions(bottom[1].uc().get())
+        p = list(map(lambda t: (t[1],t[0]), l))
+        positions.extend(p)
+
+        positions = list(map(lambda p: (p[0]+offset[0], p[1]+offset[1]), positions))
+        print(positions)
+
         cross = (1.4, 4.1)
         cross_sketch = (cq.Sketch()
                         .rect(cross[0], cross[1])
@@ -274,11 +357,15 @@ class QSC(object):
         return ret
         
     
-    def _stem_support(cap, bottom):
+    def _stem_support(cap, bottom, offset):
         delta = 0.15
         stem_radius = 5.6/2
         supports = []
         positions = QSC._stem_positions(bottom[0].uc().get())
+        l = QSC._stem_positions(bottom[1].uc().get())
+        p = list(map(lambda t: (t[1],t[0]), l))
+        positions.extend(p)
+        positions = list(map(lambda p: (p[0]+offset[0], p[1]+offset[1]), positions))
 
         for pos in positions:
             pillar = (cap.faces("<Z")
@@ -329,13 +416,30 @@ class QSC(object):
         return cap.rotate((0, 0, 0), face[1], rotation)
     
     def build(self):
+        print("")
+        print("Generating cap",self._width, self._length, self._height)
         base = 0
         cap = 0
-        top = (self._width + self._top_diff[0], self._length + self._top_diff[1])
-        bottom = (self._width, self._length)
+        width = U(2).mm()-MM(1)+self._width_slop.mm() if self._iso_enter else self._width.mm() + self._width_slop.mm()
+        length = U(1.5).mm()-MM(1)+self._length_slop.mm() if self._iso_enter else self._length + self._length_slop.mm()
+        top = (width + self._top_diff[0], 
+               length + self._top_diff[1]
+               )
+        bottom = (width,
+                  length
+                  )
+        stem_offset = (0, U(0.25/2).mm().get()) if self._iso_enter else (0,0)
+        #print(bottom)
         if self._build_step > 0:
             # Build basic shape
-            base = (QSC._base(top, bottom, self._top_fillet, self._bottom_fillet, self._height))
+            base = QSC._base(
+                top, 
+                bottom, 
+                self._top_fillet, 
+                self._bottom_fillet, 
+                self._height, 
+                self._iso_enter
+                )
             cap = base
 
         if self._build_step > 1:
@@ -357,7 +461,8 @@ class QSC(object):
                 tuple(map(lambda v: v-self._wall_thickness*2, bottom)), 
                 self._top_fillet, 
                 self._bottom_fillet, 
-                self._height
+                self._height,
+                self._iso_enter
                 ).faces(">Z")
                 .rect(bottom[0].mm().get(), bottom[1].mm().get())
                 .extrude(-self._top_thickness.mm().get(), combine="cut")
@@ -366,14 +471,17 @@ class QSC(object):
 
         if self._build_step > 4:
             # Add stem(s)
-            stem = QSC._stem(cap, bottom)
+            stem = QSC._stem(cap, bottom, stem_offset)
             cap = cap+stem 
         
         if self._build_step > 5:
             # Add support to the stem(s) for printing
-            stem_support = QSC._stem_support(cap, bottom)
+            stem_support = QSC._stem_support(cap, bottom, stem_offset)
             cap = cap + stem_support 
-            
+        cBB = cap.findSolid().BoundingBox()    
+        print(cBB.xlen, cBB.ylen, cBB.zlen)
+        print(MM(cBB.xlen).u(), MM(cBB.ylen).u(), MM(cBB.zlen).u())
+
         if self._rotated:
             return self._rotate(cap, base, 180)
         else:
@@ -480,11 +588,65 @@ def show_stems():
 
 def simple():
     q = QSC()
-    q._width = UC(1).mm()
-    q._homing = Homing.BAR
+    #q._width = MM(133).mm()
+    q._width = U(1).mm()-MM(0.5)
+    #q._length_slop = MM(0)
+    q._length = MM(19)
+    q._dish_depth = MM(1.6)
+    q._homing = Homing.SCOOP
+    q._height = MM(8)+(q._dish_depth.mm()/1.6)
+    q._wall_thickness = MM(2)
+    q._top_thickness = MM(2)+(q._dish_depth*1.5)
+    #q._convex=True
+    #q._length = UC(1.25).mm()
+    #q._homing = Homing.DOT
     #q._rotated = False
-    #q._build_step=2
+    #q._iso_enter = True
+    #q._build_step=4
     b = q.build()
-    cBB = b.findSolid().BoundingBox()
     show_object(b)
 simple()
+
+def layout():
+    q = QSC()
+    q._rotated = False
+    #q._width = U(1).mm()
+    cap = q.build()
+    bb = cap.findSolid().BoundingBox()
+    print(bb.xlen)
+    if False:
+        for x in range(5):
+            for y in range(4):
+                show_object(cap.translate((U(x).mm().get(), U(y).mm().get(),0)))
+#layout()
+
+def iso():
+    wBody = UC(1.25).mm().get()
+    wShoulder = UC(1.5).mm().get()
+    ia = (cq.Sketch()
+         .rect(UC(1).mm().get(), wShoulder)
+         .push([(UC(0.5).mm().get(),UC(0.25/2).mm().get())])
+         .rect(UC(2).mm().get(), wBody)
+          .reset()
+          .clean()
+          )
+    delta = QSC._top_diff[0].get()
+    ib = (cq.Sketch()
+         .rect(UC(1).mm().get()+delta, wShoulder+delta)
+         .push([(UC(0.5).mm().get(),UC(0.25/2).mm().get())])
+         .rect(UC(2).mm().get()+delta, wBody+delta)
+          .reset()
+          .clean()
+          )
+
+    d = (cq.Workplane()
+         .placeSketch(ia, ib.moved(cq.Location(cq.Vector(0,0,QSC._height.get()))))
+         .loft()
+         )
+    #bb = a.findSolid().BoundingBox()
+    #print(bb.xlen, bb.ylen)
+    show_object(ia)
+    debug(ib)
+    show_object(d)
+
+#iso()
